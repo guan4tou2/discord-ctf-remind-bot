@@ -1,39 +1,81 @@
-# Discord CTF 比赛提醒机器人
+# Discord CTF Reminder Bot
 
-这是一个用于管理 CTF 比赛的 Discord 机器人，可以帮助团队成员追踪和参与 CTF 比赛。
+A Discord bot that helps manage CTF competitions, including reminders, participant management, and timezone support.
 
-## 功能特点
+## Features
 
-1. 从 CTFtime 获取比赛信息
-2. 手动添加 CTF 比赛
-3. 支持团队成员加入比赛
-4. 自动发送比赛开始和结束提醒
+- CTF competition management
+  - Add competitions from CTFtime
+  - List all competitions
+  - Delete competitions
+  - Join/leave competitions
+  - View your participating competitions
+- Automatic reminders
+  - 24 hours before competition starts
+  - When competition starts
+- Timezone support
+  - Set personal timezone
+  - View time in your timezone
+- Role management
+  - Automatic role creation for competitions
+  - Role assignment when joining competitions
+- Utility commands
+  - Base64 encoding/decoding
+  - Ping test
 
-## 安装步骤
+## Installation
 
-1. 克隆此仓库
-2. 安装依赖：
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. 创建 `.env` 文件并添加你的 Discord bot token：
-   ```
-   DISCORD_TOKEN=your_discord_bot_token_here
-   ```
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/discord-ctf-remind-bot.git
+cd discord-ctf-remind-bot
+```
 
-## 使用方法
+2. Create and activate virtual environment:
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
 
-1. 启动机器人：
-   ```bash
-   python main.py
-   ```
+3. Install dependencies using uv:
+```bash
+uv pip install -r requirements.txt
+```
 
-2. 可用命令：
-   - `!add_ctf <比赛名称> <开始时间> <结束时间> [比赛链接]` - 添加新的 CTF 比赛
-   - `!list_ctf` - 列出所有 CTF 比赛
+4. Create `.env` file and add your Discord bot token:
+```
+DISCORD_TOKEN=your_bot_token_here
+```
 
-## 注意事项
+## Usage
 
-- 时间格式必须为：YYYY-MM-DD HH:MM
-- 机器人会提前 1 小时发送比赛开始和结束提醒
-- 确保机器人有足够的权限来发送消息和查看频道
+1. Start the bot:
+```bash
+python main.py
+```
+
+2. Bot commands:
+- `!timezone` - View current timezone
+- `!timezone list` - Show available timezones
+- `!timezone <timezone>` - Set timezone (e.g., `!timezone Asia/Taipei`)
+- `!addctf <ctftime_id>` - Add CTF competition
+- `!listctf` - List all competitions
+- `!delctf <ctftime_id>` - Delete competition
+- `!joinctf <ctftime_id>` - Join competition
+- `!leavectf <ctftime_id>` - Leave competition
+- `!myctf` - View your competitions
+- `!base64 encode <text>` - Encode text to base64
+- `!base64 decode <text>` - Decode base64 to text
+- `!ping` - Test bot response time
+
+## Requirements
+
+- Python 3.8+
+- discord.py
+- pytz
+- requests
+- python-dotenv
+
+## License
+
+MIT License
