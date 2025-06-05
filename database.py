@@ -255,38 +255,23 @@ class Database:
 
             if event:
                 # Check number of returned fields
-                if len(event) >= 12:  # New format with invite_link
-                    return {
-                        "event_id": event[0],
-                        "guild_id": event[1],
-                        "name": event[2],
-                        "start_time": event[3],
-                        "end_time": event[4],
-                        "event_type": event[5],
-                        "weight": event[6],
-                        "location": event[7],
-                        "official_url": event[8],
-                        "ctftime_url": event[9],
-                        "invite_link": event[10]
-                        if event[10] and len(event[10]) <= 50
-                        else "",
-                        "added_time": event[11],
-                    }
-                else:  # Old format without invite_link
-                    return {
-                        "event_id": event[0],
-                        "guild_id": event[1],
-                        "name": event[2],
-                        "start_time": event[3],
-                        "end_time": event[4],
-                        "event_type": event[5],
-                        "weight": event[6],
-                        "location": event[7],
-                        "official_url": event[8],
-                        "ctftime_url": event[9],
-                        "invite_link": "",  # Add empty invite link
-                        "added_time": event[10],
-                    }
+                return {
+                    "event_id": event[0],
+                    "guild_id": event[1],
+                    "name": event[2],
+                    "start_time": event[3],
+                    "end_time": event[4],
+                    "event_type": event[5],
+                    "weight": event[6],
+                    "location": event[7],
+                    "official_url": event[8],
+                    "ctftime_url": event[9],
+                    "invite_link": event[10]
+                    if len(event) >= 12 and event[10] and len(event[10]) <= 50
+                    else "",
+                    "added_time": event[11] if len(event) >= 12 else event[10],
+                    "added_by": event[12] if len(event) >= 13 else None,
+                }
             return None
         except Exception as e:
             print(f"Error getting event: {e}")
@@ -322,6 +307,7 @@ class Database:
                     if len(event) >= 12 and event[10] and len(event[10]) <= 50
                     else "",
                     "added_time": event[11] if len(event) >= 12 else event[10],
+                    "added_by": event[12] if len(event) >= 13 else None,
                 }
                 for event in events
             ]

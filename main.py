@@ -493,6 +493,21 @@ async def listctf(ctx):
                 status = f"{hours} hours left"
                 color = "🟠"
 
+        # Get adder info
+        adder = None
+        if event.get("added_by"):
+            try:
+                adder = await ctx.guild.fetch_member(event["added_by"])
+            except discord.NotFound:
+                # Member not found (left the server)
+                adder = None
+            except discord.HTTPException:
+                # Failed to fetch member
+                adder = None
+            except Exception as e:
+                print(f"Error fetching member: {e}")
+                adder = None
+
         # Create competition info field
         value = (
             f"**ID:** `{event['event_id']}`\n\n"
@@ -501,7 +516,8 @@ async def listctf(ctx):
             f"**Type:** {event['event_type']}\n"
             f"**Weight:** {event['weight']}\n"
             f"**Location:** {event['location']}\n"
-            f"**Status:** {color} {status}"
+            f"**Status:** {color} {status}\n"
+            f"**Added by:** {adder.mention if adder else 'Unknown'}"
         )
 
         # Add links
@@ -616,7 +632,7 @@ async def invitectf(ctx, event_id: str, invite_link: str = None):
                 # Send update message in original channel (without link)
                 channel_embed = discord.Embed(
                     title="✅ Invite Link Updated",
-                    description=f"Competition: {event['name']}\nInvite link has been sent via DM to admin and participants.",
+                    description=f"Competition: {event['name']}\nInvite link has been sent via DM to adder and participants.",
                     color=discord.Color.green(),
                 )
                 await ctx.send(embed=channel_embed)
@@ -737,8 +753,23 @@ async def joinctf(ctx, event_id: str):
                 except Exception as e:
                     await ctx.send(f"⚠️ Error sending invite link: {str(e)}")
             else:
+                # Get adder info
+                adder = None
+                print(event)
+                if event.get("added_by"):
+                    try:
+                        adder = await ctx.guild.fetch_member(event["added_by"])
+                    except discord.NotFound:
+                        # Member not found (left the server)
+                        adder = None
+                    except discord.HTTPException:
+                        # Failed to fetch member
+                        adder = None
+                    except Exception as e:
+                        print(f"Error fetching member: {e}")
+                        adder = None
                 await ctx.send(
-                    "ℹ️ This competition has no invite link set yet, please contact an administrator"
+                    f"ℹ️ This competition has no invite link set yet, please contact an adder **{adder.name if adder else 'Unknown'}**"
                 )
         else:
             await ctx.send("❌ Error joining competition")
