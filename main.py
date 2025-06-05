@@ -689,7 +689,7 @@ async def joinctf(ctx, event_id: str):
             else:
                 await ctx.send("⚠️ Corresponding role not found")
 
-            # 发送公开消息
+            # Send public message
             embed = discord.Embed(
                 title="✅ Successfully Joined Competition", color=discord.Color.green()
             )
@@ -710,32 +710,36 @@ async def joinctf(ctx, event_id: str):
             )
             await ctx.send(embed=embed)
 
-            # 如果有邀请链接，通过私信发送
+            # If there's an invite link, send it via DM
             invite_link = event.get("invite_link", "")
             if invite_link:
                 try:
-                    # 先发送一个测试消息
-                    await ctx.author.send("正在发送比赛邀请链接...")
+                    # Send a test message first
+                    await ctx.author.send("Sending competition invite link...")
 
                     embed = discord.Embed(
-                        title="🔗 CTF 比赛邀请链接",
-                        description=f"比赛: {event['name']}",
+                        title="🔗 CTF Competition Invite Link",
+                        description=f"Competition: {event['name']}",
                         color=discord.Color.blue(),
                     )
-                    embed.add_field(name="邀请链接", value=invite_link, inline=False)
+                    embed.add_field(name="Invite Link", value=invite_link, inline=False)
                     embed.add_field(
-                        name="注意",
-                        value="请妥善保管此链接，不要分享给未参加比赛的人。",
+                        name="Note",
+                        value="Please keep this link private and do not share it with non-participants.",
                         inline=False,
                     )
                     await ctx.author.send(embed=embed)
-                    await ctx.send("✅ 邀请链接已通过私信发送")
+                    await ctx.send("✅ Invite link has been sent via DM")
                 except discord.Forbidden:
-                    await ctx.send("⚠️ 无法发送私信，请确保已开启与机器人的私信权限")
+                    await ctx.send(
+                        "⚠️ Cannot send DM, please ensure you have enabled DM permissions with the bot"
+                    )
                 except Exception as e:
-                    await ctx.send(f"⚠️ 发送邀请链接时出错: {str(e)}")
+                    await ctx.send(f"⚠️ Error sending invite link: {str(e)}")
             else:
-                await ctx.send("ℹ️ 该比赛尚未设置邀请链接，请联系管理员设置")
+                await ctx.send(
+                    "ℹ️ This competition has no invite link set yet, please contact an administrator"
+                )
         else:
             await ctx.send("❌ Error joining competition")
     except Exception as e:
@@ -852,18 +856,18 @@ async def myctf(ctx):
 
 
 async def get_ctf_event(event_id: str):
-    """从 CTFtime API 获取比赛信息"""
+    """Get competition information from CTFtime API"""
     event_url = f"https://ctftime.org/api/v1/events/{event_id}/"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
 
-    # 增加重试次数和超时时间
-    for attempt in range(3):  # 最多重试3次
+    # Increase retry count and timeout
+    for attempt in range(3):  # Maximum 3 retries
         try:
             response = requests.get(
                 event_url, headers=headers, timeout=30
-            )  # 增加超时时间到30秒
+            )  # Increase timeout to 30 seconds
             response.raise_for_status()
             return response.json()
         except requests.Timeout:

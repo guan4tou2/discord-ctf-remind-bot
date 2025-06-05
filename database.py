@@ -185,7 +185,7 @@ class Database:
             conn.close()
 
     def get_event_participants(self, event_id: str, guild_id: str) -> list:
-        """获取比赛的所有参与者"""
+        """Get all participants of an event"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -332,7 +332,7 @@ class Database:
             conn.close()
 
     def delete_event(self, event_id: str, guild_id: str):
-        """删除指定 ID 的比赛"""
+        """Delete event by ID"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -344,7 +344,7 @@ class Database:
             conn.commit()
             return True
         except Exception as e:
-            print(f"删除比赛时出错: {e}")
+            print(f"Error deleting event: {e}")
             return False
         finally:
             conn.close()
