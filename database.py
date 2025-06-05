@@ -266,9 +266,7 @@ class Database:
                     "location": event[7],
                     "official_url": event[8],
                     "ctftime_url": event[9],
-                    "invite_link": event[10]
-                    if len(event) >= 12 and event[10] and len(event[10]) <= 50
-                    else "",
+                    "invite_link": event[10] if len(event) >= 12 else "",
                     "added_time": event[11] if len(event) >= 12 else event[10],
                     "added_by": event[12] if len(event) >= 13 else None,
                 }
@@ -303,9 +301,7 @@ class Database:
                     "location": event[7],
                     "official_url": event[8],
                     "ctftime_url": event[9],
-                    "invite_link": event[10]
-                    if len(event) >= 12 and event[10] and len(event[10]) <= 50
-                    else "",
+                    "invite_link": event[10] if len(event) >= 12 else "",
                     "added_time": event[11] if len(event) >= 12 else event[10],
                     "added_by": event[12] if len(event) >= 13 else None,
                 }
