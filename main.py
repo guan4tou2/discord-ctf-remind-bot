@@ -361,6 +361,7 @@ async def addctf(ctx, event_id: str):
             event["location"],
             event["url"],
             event["ctftime_url"],
+            str(ctx.author.id),  # Adder's ID
         ):
             # Get user timezone
             user_timezone = db.get_user_timezone(str(ctx.author.id), str(ctx.guild.id))
@@ -426,13 +427,14 @@ async def addctf(ctx, event_id: str):
 
     except Exception as e:
         error_message = str(e)
-        if (
-            "Connection to CTFtime timed out" in error_message
-            or "Unable to connect to CTFtime" in error_message
-        ):
-            await loading_msg.edit(content=f"❌ {error_message}")
+        if "UNIQUE constraint failed" in error_message:
+            await loading_msg.edit(
+                content=f"❌ This CTF competition (ID: {event_id}) already exists in this server!"
+            )
         else:
-            await loading_msg.edit(content=f"❌ An error occurred: {error_message}")
+            await loading_msg.edit(
+                content=f"❌ Error adding competition: {error_message}"
+            )
 
 
 @bot.command()
@@ -865,15 +867,37 @@ async def get_ctf_event(event_id: str):
             response.raise_for_status()
             return response.json()
         except requests.Timeout:
-            if attempt == 2:  # 最后一次尝试
-                raise Exception("连接 CTFtime 超时，请稍后再试")
+            if attempt == 2:  # Last attempt
+                raise Exception(
+                    "Connection to CTFtime timed out, please try again later"
+                )
             continue
         except requests.RequestException:
-            if attempt == 2:  # 最后一次尝试
-                raise Exception("无法连接到 CTFtime，请稍后再试")
+            if attempt == 2:  # Last attempt
+                raise Exception("Unable to connect to CTFtime, please try again later")
             continue
     return None
 
 
-# 运行 bot
+@bot.event
+async def on_command_error(ctx, error):
+    """Handle command errors"""
+    if isinstance(error, commands.CommandNotFound):
+        return
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f"❌ Missing required argument: {error.param.name}")
+        return
+    if isinstance(error, commands.BadArgument):
+        await ctx.send("❌ Invalid argument provided")
+        return
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ You don't have permission to use this command")
+        return
+    if isinstance(error, commands.CommandInvokeError):
+        await ctx.send(f"❌ An error occurred: {str(error.original)}")
+        return
+    await ctx.send(f"❌ An error occurred: {str(error)}")
+
+
+# Run the bot
 bot.run(os.getenv("DISCORD_TOKEN"))

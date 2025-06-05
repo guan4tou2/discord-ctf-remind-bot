@@ -8,15 +8,15 @@ class Database:
         self.init_db()
 
     def init_db(self):
-        """初始化数据库表"""
+        """Initialize database tables"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
-        # 检查是否需要迁移数据库
+        # Check if database migration is needed
         c.execute("PRAGMA table_info(ctf_events)")
         columns = [column[1] for column in c.fetchall()]
 
-        # 创建 CTF 比赛表
+        # Create CTF events table
         c.execute("""
             CREATE TABLE IF NOT EXISTS ctf_events (
                 event_id TEXT,
@@ -31,20 +31,30 @@ class Database:
                 ctftime_url TEXT,
                 invite_link TEXT,
                 added_time TEXT NOT NULL,
+                added_by TEXT,
                 PRIMARY KEY (event_id, guild_id)
             )
         """)
 
-        # 如果表已存在但没有 invite_link 列，添加该列
+        # If table exists but doesn't have invite_link column, add it
         if "invite_link" not in columns:
             try:
                 c.execute("ALTER TABLE ctf_events ADD COLUMN invite_link TEXT")
                 conn.commit()
             except sqlite3.OperationalError:
-                # 列可能已经存在，忽略错误
+                # Column might already exist, ignore error
                 pass
 
-        # 创建用户参与表
+        # If table exists but doesn't have added_by column, add it
+        if "added_by" not in columns:
+            try:
+                c.execute("ALTER TABLE ctf_events ADD COLUMN added_by TEXT")
+                conn.commit()
+            except sqlite3.OperationalError:
+                # Column might already exist, ignore error
+                pass
+
+        # Create event participants table
         c.execute("""
             CREATE TABLE IF NOT EXISTS event_participants (
                 event_id TEXT,
@@ -56,7 +66,7 @@ class Database:
             )
         """)
 
-        # 创建用户时区设置表
+        # Create user timezones table
         c.execute("""
             CREATE TABLE IF NOT EXISTS user_timezones (
                 user_id TEXT,
@@ -82,8 +92,9 @@ class Database:
         location: str,
         official_url: str,
         ctftime_url: str,
+        added_by: str,
     ) -> bool:
-        """添加新的 CTF 比赛"""
+        """Add a new CTF event"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -93,8 +104,8 @@ class Database:
                 INSERT INTO ctf_events (
                     event_id, guild_id, name, start_time, end_time,
                     event_type, weight, location, official_url, ctftime_url,
-                    invite_link, added_time
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    invite_link, added_time, added_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event_id,
@@ -107,20 +118,21 @@ class Database:
                     location,
                     official_url,
                     ctftime_url,
-                    "",  # 空的邀请链接
-                    datetime.now().isoformat(),  # 当前时间作为添加时间
+                    "",  # Empty invite link
+                    datetime.now().isoformat(),  # Current time as added time
+                    added_by,  # Adder's ID
                 ),
             )
             conn.commit()
             return True
         except Exception as e:
-            print(f"添加比赛时出错: {e}")
+            print(f"Error adding event: {e}")
             return False
         finally:
             conn.close()
 
     def join_event(self, event_id: str, guild_id: str, user_id: str) -> bool:
-        """用户加入比赛"""
+        """Join an event"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -146,13 +158,13 @@ class Database:
             conn.commit()
             return True
         except Exception as e:
-            print(f"加入比赛时出错: {e}")
+            print(f"Error joining event: {e}")
             return False
         finally:
             conn.close()
 
     def leave_event(self, event_id: str, guild_id: str, user_id: str) -> bool:
-        """用户退出比赛"""
+        """Leave an event"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -161,14 +173,13 @@ class Database:
                 """
                 DELETE FROM event_participants 
                 WHERE event_id = ? AND guild_id = ? AND user_id = ?
-            """,
+                """,
                 (event_id, guild_id, user_id),
             )
-
             conn.commit()
             return True
         except Exception as e:
-            print(f"退出比赛时出错: {e}")
+            print(f"Error leaving event: {e}")
             return False
         finally:
             conn.close()
@@ -193,8 +204,8 @@ class Database:
 
         return [{"user_id": p[0], "join_time": p[1]} for p in participants]
 
-    def get_user_events(self, guild_id: str, user_id: str) -> list:
-        """获取用户参与的所有比赛"""
+    def get_user_events(self, user_id: str, guild_id: str) -> list:
+        """Get all events a user is participating in"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -231,7 +242,7 @@ class Database:
         ]
 
     def get_event(self, event_id: str, guild_id: str):
-        """获取指定 ID 的比赛信息"""
+        """Get event by ID"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -278,13 +289,13 @@ class Database:
                     }
             return None
         except Exception as e:
-            print(f"获取比赛信息时出错: {e}")
+            print(f"Error getting event: {e}")
             return None
         finally:
             conn.close()
 
     def get_all_events(self, guild_id: str):
-        """获取所有比赛信息"""
+        """Get all events for a guild"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -315,7 +326,7 @@ class Database:
                 for event in events
             ]
         except Exception as e:
-            print(f"获取所有比赛信息时出错: {e}")
+            print(f"Error getting all events: {e}")
             return []
         finally:
             conn.close()
@@ -339,7 +350,7 @@ class Database:
             conn.close()
 
     def set_user_timezone(self, user_id: str, guild_id: str, timezone: str) -> bool:
-        """设置用户时区"""
+        """Set user timezone setting"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -352,17 +363,16 @@ class Database:
             """,
                 (user_id, guild_id, timezone, datetime.now().isoformat()),
             )
-
             conn.commit()
             return True
         except Exception as e:
-            print(f"设置用户时区时出错: {e}")
+            print(f"Error setting user timezone: {e}")
             return False
         finally:
             conn.close()
 
     def get_user_timezone(self, user_id: str, guild_id: str) -> str:
-        """获取用户时区设置"""
+        """Get user timezone setting"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -379,7 +389,7 @@ class Database:
     def set_event_invite_link(
         self, event_id: str, guild_id: str, invite_link: str
     ) -> bool:
-        """设置比赛的邀请链接"""
+        """Set invite link for an event"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
@@ -392,14 +402,13 @@ class Database:
                 UPDATE ctf_events 
                 SET invite_link = ? 
                 WHERE event_id = ? AND guild_id = ?
-            """,
+                """,
                 (invite_link, event_id, guild_id),
             )
-
             conn.commit()
             return True
         except Exception as e:
-            print(f"设置邀请链接时出错: {e}")
+            print(f"Error setting invite link: {e}")
             return False
         finally:
             conn.close()
