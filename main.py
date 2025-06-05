@@ -580,58 +580,75 @@ async def delctf(ctx, event_id: str):
 @commands.has_permissions(administrator=True)
 async def invitectf(ctx, event_id: str, invite_link: str = None):
     """Set or view competition invite link"""
-    # Delete original command message
-    try:
-        await ctx.message.delete(delay=0)  # Delete message immediately
-    except discord.Forbidden:
-        print("Cannot delete message: Bot lacks message deletion permission")
-    except discord.HTTPException as e:
-        print(f"Error deleting message: {e}")
-    except Exception as e:
-        print(f"Unknown error deleting message: {e}")
-
     event = db.get_event(event_id, str(ctx.guild.id))
     if not event:
-        try:
-            await ctx.author.send(
-                "❌ Competition not found, please add it first using !addctf"
-            )
-        except discord.Forbidden:
-            await ctx.send("❌ Cannot send DM, please check your privacy settings")
+        await ctx.send("❌ Competition not found, please add it first using !addctf")
         return
 
     if invite_link is None:
         # View current invite link
-        try:
+        if event["invite_link"]:
+            try:
+                # Only send DM if there's an invite link
+                embed = discord.Embed(
+                    title="🔗 Competition Invite Link",
+                    description=f"Competition: {event['name']}",
+                    color=discord.Color.blue(),
+                )
+                embed.add_field(
+                    name="Invite Link",
+                    value=event["invite_link"],
+                    inline=False,
+                )
+                await ctx.author.send(embed=embed)
+
+                # Send message in original channel
+                channel_embed = discord.Embed(
+                    title="🔗 Competition Invite Link",
+                    description=f"Competition: {event['name']}\nInvite link has been sent via DM.",
+                    color=discord.Color.blue(),
+                )
+                await ctx.send(embed=channel_embed)
+            except discord.Forbidden:
+                await ctx.send("❌ Cannot send DM, please check your privacy settings")
+        else:
+            # If no invite link, just show message in channel
             embed = discord.Embed(
                 title="🔗 Competition Invite Link",
-                description=f"Competition: {event['name']}",
+                description=f"Competition: {event['name']}\nNo invite link has been set yet.",
                 color=discord.Color.blue(),
             )
-            embed.add_field(
-                name="Invite Link",
-                value=event["invite_link"] or "Not set",
-                inline=False,
-            )
-            await ctx.author.send(embed=embed)
-        except discord.Forbidden:
-            await ctx.send("❌ Cannot send DM, please check your privacy settings")
+            await ctx.send(embed=embed)
     else:
+        # Delete original command message when setting new link
+        try:
+            await ctx.message.delete(delay=0)  # Delete message immediately
+        except discord.Forbidden:
+            print("Cannot delete message: Bot lacks message deletion permission")
+        except discord.HTTPException as e:
+            print(f"Error deleting message: {e}")
+        except Exception as e:
+            print(f"Unknown error deleting message: {e}")
+
         # Set new invite link
         if db.set_event_invite_link(event_id, str(ctx.guild.id), invite_link):
             try:
                 # Send DM to admin
                 embed = discord.Embed(
-                    title="✅ Invite Link Updated",
+                    title="✅ Invite Link Set"
+                    if not event["invite_link"]
+                    else "✅ Invite Link Updated",
                     description=f"Competition: {event['name']}",
                     color=discord.Color.green(),
                 )
-                embed.add_field(name="New Invite Link", value=invite_link, inline=False)
+                embed.add_field(name="Invite Link", value=invite_link, inline=False)
                 await ctx.author.send(embed=embed)
 
                 # Send update message in original channel (without link)
                 channel_embed = discord.Embed(
-                    title="✅ Invite Link Updated",
+                    title="✅ Invite Link Set"
+                    if not event["invite_link"]
+                    else "✅ Invite Link Updated",
                     description=f"Competition: {event['name']}\nInvite link has been sent via DM to adder and participants.",
                     color=discord.Color.green(),
                 )
@@ -643,7 +660,9 @@ async def invitectf(ctx, event_id: str, invite_link: str = None):
                 if role:
                     # Create notification message
                     notify_embed = discord.Embed(
-                        title="🔔 Competition Invite Link Updated",
+                        title="🔔 Competition Invite Link Set"
+                        if not event["invite_link"]
+                        else "🔔 Competition Invite Link Updated",
                         description=f"Competition: {event['name']}",
                         color=discord.Color.blue(),
                     )
