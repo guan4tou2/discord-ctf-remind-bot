@@ -333,107 +333,106 @@ async def addctf(ctx, event_id: str):
     Usage:
     !addctf <ctftime_event_id> - Add specified CTF competition to reminder list
     """
+    loading_msg = await ctx.send("⏳ Getting competition information...")
+
     try:
-        # Check if already added
-        existing_event = db.get_event(event_id, str(ctx.guild.id))
-        if existing_event:
-            await ctx.send("❌ This competition has already been added!")
+        # Get competition info
+        event = await get_ctf_event(event_id)
+        if not event:
+            await loading_msg.edit(
+                content="❌ Unable to get competition info, please check the event ID"
+            )
             return
 
-        # Get competition info from CTFtime API
-        event_url = f"https://ctftime.org/api/v1/events/{event_id}/"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
+        # Check if competition already exists
+        if db.get_event(event_id, str(ctx.guild.id)):
+            await loading_msg.edit(content="❌ This competition has already been added")
+            return
 
-        # Increase retry count and timeout
-        for attempt in range(3):  # Max 3 retries
+        # Add competition to database
+        if db.add_event(
+            event_id,
+            str(ctx.guild.id),
+            event["title"],
+            event["start"],
+            event["finish"],
+            event["format"],
+            event["weight"],
+            event["location"],
+            event["url"],
+            event["ctftime_url"],
+        ):
+            # Get user timezone
+            user_timezone = db.get_user_timezone(str(ctx.author.id), str(ctx.guild.id))
+            # Create role
             try:
-                response = requests.get(
-                    event_url, headers=headers, timeout=30
-                )  # Increase timeout to 30 seconds
-                response.raise_for_status()
-                event = response.json()
-                break
-            except requests.Timeout:
-                if attempt == 2:  # Last attempt
-                    await ctx.send(
-                        "❌ Connection to CTFtime timed out, please try again later"
-                    )
-                    return
-                continue
-            except requests.RequestException as e:
-                if attempt == 2:  # Last attempt
-                    await ctx.send(f"❌ Error getting CTFtime API info: {str(e)}")
-                    return
-                continue
+                role = await ctx.guild.create_role(
+                    name=f"CTF-{event['title']}",
+                    color=discord.Color.blue(),
+                    reason=f"Creating role for CTF competition {event['title']}",
+                )
+                await ctx.send(f"✅ Role created: {role.mention}")
+            except discord.Forbidden:
+                await ctx.send("❌ No permission to create roles")
+            except Exception as e:
+                await ctx.send(f"❌ Error creating role: {str(e)}")
+            if not user_timezone:
+                user_timezone = "UTC"
 
-        # Parse time
-        start_time = datetime.fromisoformat(event.get("start").replace("Z", "+00:00"))
-        end_time = datetime.fromisoformat(event.get("finish").replace("Z", "+00:00"))
+            # Convert time to user timezone
+            start_time = convert_to_user_timezone(
+                datetime.fromisoformat(event["start"]), user_timezone, str(ctx.guild.id)
+            )
+            end_time = convert_to_user_timezone(
+                datetime.fromisoformat(event["finish"]),
+                user_timezone,
+                str(ctx.guild.id),
+            )
 
-        # Prepare database data
-        event_data = {
-            "event_id": event_id,
-            "name": event.get("title", "Unknown"),
-            "start_time": start_time.isoformat(),
-            "end_time": end_time.isoformat(),
-            "event_type": event.get("format", "Unknown"),
-            "weight": float(event.get("weight", 0)),
-            "location": event.get("location", "Online"),
-            "official_url": event.get("url", ""),
-            "ctftime_url": event.get("ctftime_url", ""),
-        }
-
-        # Save to database
-        if not db.add_event(event_data, str(ctx.guild.id)):
-            await ctx.send("❌ Error saving competition info")
-            return
-
-        # Create role
-        try:
-            role = await ctx.guild.create_role(
-                name=f"CTF-{event_data['name']}",
+            # Create embed
+            embed = discord.Embed(
+                title="🎯 CTF Competition Added",
+                description=f"**Competition Name:**\n{event['title']}\n\n**ID:** `{event_id}`",
                 color=discord.Color.blue(),
-                reason=f"Creating role for CTF competition {event_data['name']}",
-            )
-            await ctx.send(f"✅ Role created: {role.mention}")
-        except discord.Forbidden:
-            await ctx.send("❌ No permission to create roles")
-        except Exception as e:
-            await ctx.send(f"❌ Error creating role: {str(e)}")
-
-        # Create embed
-        embed = discord.Embed(
-            title="🎯 CTF Competition Added", color=discord.Color.blue()
-        )
-
-        # Add competition info
-        embed.add_field(name="Competition Name", value=event_data["name"], inline=False)
-        embed.add_field(
-            name="Start Time", value=start_time.strftime("%Y-%m-%d %H:%M"), inline=True
-        )
-        embed.add_field(
-            name="End Time", value=end_time.strftime("%Y-%m-%d %H:%M"), inline=True
-        )
-        embed.add_field(name="Type", value=event_data["event_type"], inline=True)
-        embed.add_field(name="Weight", value=str(event_data["weight"]), inline=True)
-        embed.add_field(name="Location", value=event_data["location"], inline=True)
-
-        # Add links
-        if event_data["official_url"]:
-            embed.add_field(
-                name="Official Link", value=event_data["official_url"], inline=False
-            )
-        if event_data["ctftime_url"]:
-            embed.add_field(
-                name="CTFtime Link", value=event_data["ctftime_url"], inline=False
             )
 
-        await ctx.send(embed=embed)
+            # Add time information
+            time_info = (
+                f"**Start Time:**\n{start_time.strftime('%Y-%m-%d %H:%M')} ({start_time.tzinfo})\n\n"
+                f"**End Time:**\n{end_time.strftime('%Y-%m-%d %H:%M')} ({end_time.tzinfo})"
+            )
+            embed.add_field(name="⏰ Time Information", value=time_info, inline=False)
+
+            # Add competition details
+            details = f"**Type:** {event['format']}\n**Weight:** {event['weight']}\n"
+            if event["location"]:
+                details += f"**Location:** {event['location']}\n"
+            embed.add_field(name="📋 Competition Details", value=details, inline=False)
+
+            # Add links
+            links = (
+                f"**Official Link:**\n[Click to Visit]({event['url']})\n\n"
+                f"**CTFTime Link:**\n[Click to Visit]({event['ctftime_url']})"
+            )
+            embed.add_field(name="🔗 Links", value=links, inline=False)
+
+            # Add footer
+            embed.set_footer(text="Use !joinctf <id> to join this competition")
+
+            # Update loading message to success message
+            await loading_msg.edit(content=None, embed=embed)
+        else:
+            await loading_msg.edit(content="❌ Failed to add competition")
 
     except Exception as e:
-        await ctx.send(f"❌ Error occurred: {str(e)}")
+        error_message = str(e)
+        if (
+            "Connection to CTFtime timed out" in error_message
+            or "Unable to connect to CTFtime" in error_message
+        ):
+            await loading_msg.edit(content=f"❌ {error_message}")
+        else:
+            await loading_msg.edit(content=f"❌ An error occurred: {error_message}")
 
 
 @bot.command()
@@ -494,9 +493,9 @@ async def listctf(ctx):
 
         # Create competition info field
         value = (
-            f"**ID:** `{event['event_id']}`\n"
-            f"**Start Time:** {user_start_time.strftime('%Y-%m-%d %H:%M')} ({user_start_time.tzinfo})\n"
-            f"**End Time:** {user_end_time.strftime('%Y-%m-%d %H:%M')} ({user_end_time.tzinfo})\n"
+            f"**ID:** `{event['event_id']}`\n\n"
+            f"**Start Time:**\n{user_start_time.strftime('%Y-%m-%d %H:%M')} ({user_start_time.tzinfo})\n\n"
+            f"**End Time:**\n{user_end_time.strftime('%Y-%m-%d %H:%M')} ({user_end_time.tzinfo})\n\n"
             f"**Type:** {event['event_type']}\n"
             f"**Weight:** {event['weight']}\n"
             f"**Location:** {event['location']}\n"
@@ -505,9 +504,9 @@ async def listctf(ctx):
 
         # Add links
         if event["official_url"]:
-            value += f"\n**Official Link:** {event['official_url']}"
+            value += f"\n\n**Official Link:**\n{event['official_url']}"
         if event["ctftime_url"]:
-            value += f"\n**CTFtime:** {event['ctftime_url']}"
+            value += f"\n\n**CTFtime:**\n{event['ctftime_url']}"
 
         # Add separator
         if i < len(events):
@@ -560,6 +559,103 @@ async def delctf(ctx, event_id: str):
 
 
 @bot.command()
+@commands.has_permissions(administrator=True)
+async def invitectf(ctx, event_id: str, invite_link: str = None):
+    """Set or view competition invite link"""
+    # Delete original command message
+    try:
+        await ctx.message.delete(delay=0)  # Delete message immediately
+    except discord.Forbidden:
+        print("Cannot delete message: Bot lacks message deletion permission")
+    except discord.HTTPException as e:
+        print(f"Error deleting message: {e}")
+    except Exception as e:
+        print(f"Unknown error deleting message: {e}")
+
+    event = db.get_event(event_id, str(ctx.guild.id))
+    if not event:
+        try:
+            await ctx.author.send(
+                "❌ Competition not found, please add it first using !addctf"
+            )
+        except discord.Forbidden:
+            await ctx.send("❌ Cannot send DM, please check your privacy settings")
+        return
+
+    if invite_link is None:
+        # View current invite link
+        try:
+            embed = discord.Embed(
+                title="🔗 Competition Invite Link",
+                description=f"Competition: {event['name']}",
+                color=discord.Color.blue(),
+            )
+            embed.add_field(
+                name="Invite Link",
+                value=event["invite_link"] or "Not set",
+                inline=False,
+            )
+            await ctx.author.send(embed=embed)
+        except discord.Forbidden:
+            await ctx.send("❌ Cannot send DM, please check your privacy settings")
+    else:
+        # Set new invite link
+        if db.set_event_invite_link(event_id, str(ctx.guild.id), invite_link):
+            try:
+                # Send DM to admin
+                embed = discord.Embed(
+                    title="✅ Invite Link Updated",
+                    description=f"Competition: {event['name']}",
+                    color=discord.Color.green(),
+                )
+                embed.add_field(name="New Invite Link", value=invite_link, inline=False)
+                await ctx.author.send(embed=embed)
+
+                # Send update message in original channel (without link)
+                channel_embed = discord.Embed(
+                    title="✅ Invite Link Updated",
+                    description=f"Competition: {event['name']}\nInvite link has been sent via DM to admin and participants.",
+                    color=discord.Color.green(),
+                )
+                await ctx.send(embed=channel_embed)
+
+                # Notify all members with the competition role
+                role_name = f"CTF-{event['name']}"
+                role = discord.utils.get(ctx.guild.roles, name=role_name)
+                if role:
+                    # Create notification message
+                    notify_embed = discord.Embed(
+                        title="🔔 Competition Invite Link Updated",
+                        description=f"Competition: {event['name']}",
+                        color=discord.Color.blue(),
+                    )
+                    notify_embed.add_field(
+                        name="Invite Link",
+                        value=invite_link,
+                        inline=False,
+                    )
+                    notify_embed.add_field(
+                        name="Note",
+                        value="Please keep this link private and do not share it with non-participants.",
+                        inline=False,
+                    )
+
+                    # Send notifications
+                    for member in role.members:
+                        try:
+                            await member.send(embed=notify_embed)
+                        except discord.Forbidden:
+                            continue  # Skip if cannot send DM to member
+            except discord.Forbidden:
+                await ctx.send("❌ Cannot send DM, please check your privacy settings")
+        else:
+            try:
+                await ctx.author.send("❌ Failed to set invite link")
+            except discord.Forbidden:
+                await ctx.send("❌ Cannot send DM, please check your privacy settings")
+
+
+@bot.command()
 async def joinctf(ctx, event_id: str):
     """Join CTF competition
     Usage:
@@ -591,6 +687,7 @@ async def joinctf(ctx, event_id: str):
             else:
                 await ctx.send("⚠️ Corresponding role not found")
 
+            # 发送公开消息
             embed = discord.Embed(
                 title="✅ Successfully Joined Competition", color=discord.Color.green()
             )
@@ -610,6 +707,33 @@ async def joinctf(ctx, event_id: str):
                 inline=True,
             )
             await ctx.send(embed=embed)
+
+            # 如果有邀请链接，通过私信发送
+            invite_link = event.get("invite_link", "")
+            if invite_link:
+                try:
+                    # 先发送一个测试消息
+                    await ctx.author.send("正在发送比赛邀请链接...")
+
+                    embed = discord.Embed(
+                        title="🔗 CTF 比赛邀请链接",
+                        description=f"比赛: {event['name']}",
+                        color=discord.Color.blue(),
+                    )
+                    embed.add_field(name="邀请链接", value=invite_link, inline=False)
+                    embed.add_field(
+                        name="注意",
+                        value="请妥善保管此链接，不要分享给未参加比赛的人。",
+                        inline=False,
+                    )
+                    await ctx.author.send(embed=embed)
+                    await ctx.send("✅ 邀请链接已通过私信发送")
+                except discord.Forbidden:
+                    await ctx.send("⚠️ 无法发送私信，请确保已开启与机器人的私信权限")
+                except Exception as e:
+                    await ctx.send(f"⚠️ 发送邀请链接时出错: {str(e)}")
+            else:
+                await ctx.send("ℹ️ 该比赛尚未设置邀请链接，请联系管理员设置")
         else:
             await ctx.send("❌ Error joining competition")
     except Exception as e:
@@ -698,9 +822,9 @@ async def myctf(ctx):
 
             # Create competition info field
             value = (
-                f"**ID:** `{event['event_id']}`\n"
-                f"**Start Time:** {user_start_time.strftime('%Y-%m-%d %H:%M')} ({user_start_time.tzinfo})\n"
-                f"**End Time:** {user_end_time.strftime('%Y-%m-%d %H:%M')} ({user_end_time.tzinfo})\n"
+                f"**ID:** `{event['event_id']}`\n\n"
+                f"**Start Time:**\n{user_start_time.strftime('%Y-%m-%d %H:%M')} ({user_start_time.tzinfo})\n\n"
+                f"**End Time:**\n{user_end_time.strftime('%Y-%m-%d %H:%M')} ({user_end_time.tzinfo})\n\n"
                 f"**Type:** {event['event_type']}\n"
                 f"**Weight:** {event['weight']}\n"
                 f"**Location:** {event['location']}\n"
@@ -709,9 +833,9 @@ async def myctf(ctx):
 
             # Add links
             if event["official_url"]:
-                value += f"\n**Official Link:** {event['official_url']}"
+                value += f"\n\n**Official Link:**\n{event['official_url']}"
             if event["ctftime_url"]:
-                value += f"\n**CTFtime:** {event['ctftime_url']}"
+                value += f"\n\n**CTFtime:**\n{event['ctftime_url']}"
 
             # Add separator
             if i < len(events):
@@ -723,6 +847,32 @@ async def myctf(ctx):
 
     except Exception as e:
         await ctx.send(f"❌ Error occurred: {str(e)}")
+
+
+async def get_ctf_event(event_id: str):
+    """从 CTFtime API 获取比赛信息"""
+    event_url = f"https://ctftime.org/api/v1/events/{event_id}/"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+
+    # 增加重试次数和超时时间
+    for attempt in range(3):  # 最多重试3次
+        try:
+            response = requests.get(
+                event_url, headers=headers, timeout=30
+            )  # 增加超时时间到30秒
+            response.raise_for_status()
+            return response.json()
+        except requests.Timeout:
+            if attempt == 2:  # 最后一次尝试
+                raise Exception("连接 CTFtime 超时，请稍后再试")
+            continue
+        except requests.RequestException:
+            if attempt == 2:  # 最后一次尝试
+                raise Exception("无法连接到 CTFtime，请稍后再试")
+            continue
+    return None
 
 
 # 运行 bot

@@ -38,21 +38,21 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 3. Install dependencies using uv:
-```bash
+   ```bash
 uv pip install -r requirements.txt
-```
+   ```
 
 4. Create `.env` file and add your Discord bot token:
-```
+   ```
 DISCORD_TOKEN=your_bot_token_here
-```
+   ```
 
 ## Usage
 
 1. Start the bot:
-```bash
-python main.py
-```
+   ```bash
+   python main.py
+   ```
 
 2. Bot commands:
 - `!timezone` - View current timezone
