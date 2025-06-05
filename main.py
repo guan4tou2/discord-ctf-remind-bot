@@ -707,6 +707,16 @@ async def joinctf(ctx, event_id: str):
             )
             return
 
+        # Check if user already joined
+        if db.is_user_joined(event_id, str(ctx.guild.id), str(ctx.author.id)):
+            embed = discord.Embed(
+                title="ℹ️ Already Joined",
+                description=f"You have already joined this competition: {event['name']}",
+                color=discord.Color.blue(),
+            )
+            await ctx.send(embed=embed)
+            return
+
         # Join competition
         if db.join_event(event_id, str(ctx.guild.id), str(ctx.author.id)):
             # Find corresponding role

@@ -145,10 +145,18 @@ class Database:
             if not c.fetchone():
                 return False
 
+            # Check if user already joined
+            c.execute(
+                "SELECT 1 FROM event_participants WHERE event_id = ? AND guild_id = ? AND user_id = ?",
+                (event_id, guild_id, user_id),
+            )
+            if c.fetchone():
+                return True  # User already joined, return success
+
             # Add user participation record
             c.execute(
                 """
-                INSERT OR REPLACE INTO event_participants 
+                INSERT INTO event_participants 
                 (event_id, guild_id, user_id, join_time)
                 VALUES (?, ?, ?, ?)
                 """,
@@ -204,7 +212,7 @@ class Database:
 
         return [{"user_id": p[0], "join_time": p[1]} for p in participants]
 
-    def get_user_events(self, user_id: str, guild_id: str) -> list:
+    def get_user_events(self, guild_id: str, user_id: str) -> list:
         """Get all events a user is participating in"""
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
@@ -237,6 +245,7 @@ class Database:
                 "ctftime_url": event[9],
                 "invite_link": event[10],
                 "added_time": event[11],
+                "added_by": event[12] if len(event) >= 13 else None,
             }
             for event in events
         ]
@@ -391,6 +400,26 @@ class Database:
             return True
         except Exception as e:
             print(f"Error setting invite link: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def is_user_joined(self, event_id: str, guild_id: str, user_id: str) -> bool:
+        """Check if user has already joined an event"""
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+
+        try:
+            c.execute(
+                """
+                SELECT 1 FROM event_participants 
+                WHERE event_id = ? AND guild_id = ? AND user_id = ?
+                """,
+                (event_id, guild_id, user_id),
+            )
+            return bool(c.fetchone())
+        except Exception as e:
+            print(f"Error checking user join status: {e}")
             return False
         finally:
             conn.close()
