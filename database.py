@@ -137,7 +137,7 @@ class Database:
         c = conn.cursor()
 
         try:
-            # 检查比赛是否存在
+            # Check if event exists
             c.execute(
                 "SELECT 1 FROM ctf_events WHERE event_id = ? AND guild_id = ?",
                 (event_id, guild_id),
@@ -145,13 +145,13 @@ class Database:
             if not c.fetchone():
                 return False
 
-            # 添加用户参与记录
+            # Add user participation record
             c.execute(
                 """
                 INSERT OR REPLACE INTO event_participants 
                 (event_id, guild_id, user_id, join_time)
                 VALUES (?, ?, ?, ?)
-            """,
+                """,
                 (event_id, guild_id, user_id, datetime.now().isoformat()),
             )
 
@@ -254,8 +254,8 @@ class Database:
             event = c.fetchone()
 
             if event:
-                # 检查返回的字段数量
-                if len(event) >= 12:  # 包含 invite_link 的新格式
+                # Check number of returned fields
+                if len(event) >= 12:  # New format with invite_link
                     return {
                         "event_id": event[0],
                         "guild_id": event[1],
@@ -272,7 +272,7 @@ class Database:
                         else "",
                         "added_time": event[11],
                     }
-                else:  # 旧格式，没有 invite_link
+                else:  # Old format without invite_link
                     return {
                         "event_id": event[0],
                         "guild_id": event[1],
@@ -284,7 +284,7 @@ class Database:
                         "location": event[7],
                         "official_url": event[8],
                         "ctftime_url": event[9],
-                        "invite_link": "",  # 添加空的邀请链接
+                        "invite_link": "",  # Add empty invite link
                         "added_time": event[10],
                     }
             return None
@@ -394,7 +394,7 @@ class Database:
         c = conn.cursor()
 
         try:
-            # 确保 invite_link 不为 None
+            # Ensure invite_link is not None
             invite_link = invite_link or ""
 
             c.execute(
