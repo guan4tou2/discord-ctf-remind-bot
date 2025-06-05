@@ -460,15 +460,23 @@ async def listctf(ctx):
         start_time = datetime.fromisoformat(event["start_time"])
         end_time = datetime.fromisoformat(event["end_time"])
 
+        # Convert to user's timezone
+        user_start_time = convert_to_user_timezone(
+            start_time, str(ctx.author.id), str(ctx.guild.id)
+        )
+        user_end_time = convert_to_user_timezone(
+            end_time, str(ctx.author.id), str(ctx.guild.id)
+        )
+
         # Calculate remaining time (ensure timezone consistency)
-        now = datetime.now(start_time.tzinfo)
-        time_left = start_time - now
+        now = datetime.now(user_start_time.tzinfo)
+        time_left = user_start_time - now
 
         # Set status and color
-        if now > end_time:
+        if now > user_end_time:
             status = "Ended"
             color = "🔴"
-        elif now > start_time:
+        elif now > user_start_time:
             status = "In Progress"
             color = "🟢"
         else:
@@ -487,8 +495,8 @@ async def listctf(ctx):
         # Create competition info field
         value = (
             f"**ID:** `{event['event_id']}`\n"
-            f"**Start Time:** {start_time.strftime('%Y-%m-%d %H:%M')}\n"
-            f"**End Time:** {end_time.strftime('%Y-%m-%d %H:%M')}\n"
+            f"**Start Time:** {user_start_time.strftime('%Y-%m-%d %H:%M')} ({user_start_time.tzinfo})\n"
+            f"**End Time:** {user_end_time.strftime('%Y-%m-%d %H:%M')} ({user_end_time.tzinfo})\n"
             f"**Type:** {event['event_type']}\n"
             f"**Weight:** {event['weight']}\n"
             f"**Location:** {event['location']}\n"
@@ -656,15 +664,23 @@ async def myctf(ctx):
             start_time = datetime.fromisoformat(event["start_time"])
             end_time = datetime.fromisoformat(event["end_time"])
 
+            # Convert to user's timezone
+            user_start_time = convert_to_user_timezone(
+                start_time, str(ctx.author.id), str(ctx.guild.id)
+            )
+            user_end_time = convert_to_user_timezone(
+                end_time, str(ctx.author.id), str(ctx.guild.id)
+            )
+
             # Calculate remaining time (ensure timezone consistency)
-            now = datetime.now(start_time.tzinfo)
-            time_left = start_time - now
+            now = datetime.now(user_start_time.tzinfo)
+            time_left = user_start_time - now
 
             # Set status and color
-            if now > end_time:
+            if now > user_end_time:
                 status = "Ended"
                 color = "🔴"
-            elif now > start_time:
+            elif now > user_start_time:
                 status = "In Progress"
                 color = "🟢"
             else:
@@ -683,8 +699,8 @@ async def myctf(ctx):
             # Create competition info field
             value = (
                 f"**ID:** `{event['event_id']}`\n"
-                f"**Start Time:** {start_time.strftime('%Y-%m-%d %H:%M')}\n"
-                f"**End Time:** {end_time.strftime('%Y-%m-%d %H:%M')}\n"
+                f"**Start Time:** {user_start_time.strftime('%Y-%m-%d %H:%M')} ({user_start_time.tzinfo})\n"
+                f"**End Time:** {user_end_time.strftime('%Y-%m-%d %H:%M')} ({user_end_time.tzinfo})\n"
                 f"**Type:** {event['event_type']}\n"
                 f"**Weight:** {event['weight']}\n"
                 f"**Location:** {event['location']}\n"
