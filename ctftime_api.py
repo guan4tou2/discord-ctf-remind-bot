@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
+import aiohttp
 import requests
 from bs4 import BeautifulSoup
 
@@ -49,6 +50,31 @@ class CTFtimeParseError(CTFtimeError):
     pass
 
 
+async def _make_async_request(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict:
+    """Make an async request to CTFtime.
+
+    Args:
+        url: The URL to request
+        timeout: Request timeout in seconds
+
+    Returns:
+        Response data as dictionary
+
+    Raises:
+        CTFtimeConnectionError: If connection fails
+        CTFtimeAPIError: If API returns an error response
+    """
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url, headers=HEADERS, timeout=timeout) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    raise CTFtimeAPIError(f"API returned status code {response.status}")
+        except aiohttp.ClientError as e:
+            raise CTFtimeConnectionError(f"Failed to connect to CTFtime: {str(e)}")
+
+
 def _make_request(
     url: str, timeout: int = DEFAULT_TIMEOUT, retries: int = DEFAULT_RETRIES
 ) -> requests.Response:
@@ -81,7 +107,7 @@ def _make_request(
             continue
 
 
-def get_event(event_id: str) -> Optional[Dict]:
+async def get_event(event_id: str) -> Optional[Dict]:
     """Get detailed information about a specific CTF event.
 
     Args:
@@ -94,8 +120,7 @@ def get_event(event_id: str) -> Optional[Dict]:
         CTFtimeError: If there's any error fetching or parsing the event
     """
     try:
-        response = _make_request(f"{API_BASE_URL}/events/{event_id}/")
-        event = response.json()
+        event = await _make_async_request(f"{API_BASE_URL}/events/{event_id}/")
 
         # Parse start and end times
         start_time = event.get("start")
