@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 from database import Database
+from test_ctftime import fetch_team_planned_events
 
 # 加载环境变量
 load_dotenv()
@@ -310,12 +311,282 @@ async def check_ctf_events():
         print(f"Error checking CTF competitions: {str(e)}")
 
 
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setctftime(ctx, team_id: str = None):
+    """Set or view CTFtime team ID
+    Usage:
+    !setctftime - View current CTFtime team ID
+    !setctftime <team_id> - Set CTFtime team ID and import planned events
+    """
+    if team_id is None:
+        # View current team ID
+        current_team_id = db.get_ctftime_team_id(str(ctx.guild.id))
+        if current_team_id:
+            embed = discord.Embed(
+                title="CTFtime Team ID",
+                description=f"Current team ID: `{current_team_id}`",
+                color=discord.Color.blue(),
+            )
+            embed.add_field(
+                name="Team URL",
+                value=f"https://ctftime.org/team/{current_team_id}",
+                inline=False,
+            )
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send(
+                "❌ No CTFtime team ID set, please use `!setctftime <team_id>` to set one"
+            )
+        return
+
+    # Set new team ID
+    if db.set_ctftime_team_id(str(ctx.guild.id), team_id):
+        embed = discord.Embed(
+            title="✅ CTFtime Team ID Set",
+            description=f"Team ID: `{team_id}`",
+            color=discord.Color.green(),
+        )
+        embed.add_field(
+            name="Team URL",
+            value=f"https://ctftime.org/team/{team_id}",
+            inline=False,
+        )
+        await ctx.send(embed=embed)
+
+        # Get notification channel
+        channel_id = db.get_notification_channel(str(ctx.guild.id))
+        if not channel_id:
+            await ctx.send(
+                "⚠️ No notification channel set. Please use `!setnotify #channel` to set one."
+            )
+            return
+
+        channel = ctx.guild.get_channel(int(channel_id))
+        if not channel:
+            await ctx.send(
+                "⚠️ Notification channel not found. Please set a new one using `!setnotify #channel`."
+            )
+            return
+
+        # Send loading message
+        loading_msg = await channel.send("⏳ Importing planned events from CTFtime...")
+
+        try:
+            # Get team's planned events
+            planned_events = fetch_team_planned_events(team_id)
+            if not planned_events:
+                await loading_msg.edit(
+                    content="❌ No planned events found or failed to fetch events."
+                )
+                return
+
+            # Import each planned event
+            imported_count = 0
+            skipped_count = 0
+            error_count = 0
+
+            for event in planned_events:
+                # Check if event already exists
+                if db.get_event(event["id"], str(ctx.guild.id)):
+                    skipped_count += 1
+                    continue
+
+                # Get event details
+                event_details = await get_ctf_event(event["id"])
+                if not event_details:
+                    error_count += 1
+                    continue
+
+                # Add event to database
+                if db.add_event(
+                    event["id"],
+                    str(ctx.guild.id),
+                    event_details["title"],
+                    event_details["start"],
+                    event_details["finish"],
+                    event_details["format"],
+                    event_details["weight"],
+                    event_details["location"],
+                    event_details["url"],
+                    event_details["ctftime_url"],
+                    str(ctx.author.id),  # Use command user's ID as adder
+                ):
+                    # Create role
+                    try:
+                        role = await ctx.guild.create_role(
+                            name=f"CTF-{event_details['title']}",
+                            color=discord.Color.blue(),
+                            reason=f"Creating role for CTF competition {event_details['title']}",
+                        )
+                    except discord.Forbidden:
+                        print(f"No permission to create role in guild {ctx.guild.id}")
+                    except Exception as e:
+                        print(f"Error creating role: {e}")
+
+                    # Send notification
+                    embed = discord.Embed(
+                        title="🎯 New CTF Competition Added",
+                        description=f"**Competition Name:**\n{event_details['title']}\n\n**ID:** `{event['id']}`",
+                        color=discord.Color.blue(),
+                    )
+
+                    # Add time information
+                    start_time = datetime.fromisoformat(event_details["start"])
+                    end_time = datetime.fromisoformat(event_details["finish"])
+                    time_info = (
+                        f"**Start Time:**\n{start_time.strftime('%Y-%m-%d %H:%M')} UTC\n\n"
+                        f"**End Time:**\n{end_time.strftime('%Y-%m-%d %H:%M')} UTC"
+                    )
+                    embed.add_field(
+                        name="⏰ Time Information", value=time_info, inline=False
+                    )
+
+                    # Add competition details
+                    details = f"**Type:** {event_details['format']}\n**Weight:** {event_details['weight']}\n"
+                    if event_details["location"]:
+                        details += f"**Location:** {event_details['location']}\n"
+                    embed.add_field(
+                        name="📋 Competition Details", value=details, inline=False
+                    )
+
+                    # Add links
+                    links = (
+                        f"**Official Link:**\n[Click to Visit]({event_details['url']})\n\n"
+                        f"**CTFtime Link:**\n[Click to Visit]({event_details['ctftime_url']})"
+                    )
+                    embed.add_field(name="🔗 Links", value=links, inline=False)
+
+                    embed.set_footer(text="Use !joinctf <id> to join this competition")
+                    await channel.send(embed=embed)
+                    imported_count += 1
+                else:
+                    error_count += 1
+
+            # Send summary
+            summary = (
+                f"✅ Import completed!\n\n"
+                f"📊 Summary:\n"
+                f"• Imported: {imported_count} events\n"
+                f"• Skipped (already exist): {skipped_count} events\n"
+                f"• Failed: {error_count} events"
+            )
+            await loading_msg.edit(content=summary)
+
+        except Exception as e:
+            await loading_msg.edit(content=f"❌ Error importing events: {str(e)}")
+    else:
+        await ctx.send("❌ Error setting CTFtime team ID")
+
+
+@tasks.loop(hours=1)  # Check every hour
+async def check_team_events():
+    """Check team's planned CTF events and add them automatically"""
+    try:
+        for guild in bot.guilds:
+            team_id = db.get_ctftime_team_id(str(guild.id))
+            if not team_id:
+                continue
+
+            # Get team's planned events
+            planned_events = fetch_team_planned_events(team_id)
+            if not planned_events:
+                continue
+
+            # Get notification channel
+            channel_id = db.get_notification_channel(str(guild.id))
+            if not channel_id:
+                continue
+
+            channel = guild.get_channel(int(channel_id))
+            if not channel:
+                continue
+
+            # Check each planned event
+            for event in planned_events:
+                # Check if event already exists
+                if db.get_event(event["id"], str(guild.id)):
+                    continue
+
+                # Get event details
+                event_details = await get_ctf_event(event["id"])
+                if not event_details:
+                    continue
+
+                # Add event to database
+                if db.add_event(
+                    event["id"],
+                    str(guild.id),
+                    event_details["title"],
+                    event_details["start"],
+                    event_details["finish"],
+                    event_details["format"],
+                    event_details["weight"],
+                    event_details["location"],
+                    event_details["url"],
+                    event_details["ctftime_url"],
+                    str(bot.user.id),  # Bot's ID as adder
+                ):
+                    # Create role
+                    try:
+                        role = await guild.create_role(
+                            name=f"CTF-{event_details['title']}",
+                            color=discord.Color.blue(),
+                            reason=f"Creating role for CTF competition {event_details['title']}",
+                        )
+                    except discord.Forbidden:
+                        print(f"No permission to create role in guild {guild.id}")
+                    except Exception as e:
+                        print(f"Error creating role: {e}")
+
+                    # Send notification
+                    embed = discord.Embed(
+                        title="🎯 New CTF Competition Added",
+                        description=f"**Competition Name:**\n{event_details['title']}\n\n**ID:** `{event['id']}`",
+                        color=discord.Color.blue(),
+                    )
+
+                    # Add time information
+                    start_time = datetime.fromisoformat(event_details["start"])
+                    end_time = datetime.fromisoformat(event_details["finish"])
+                    time_info = (
+                        f"**Start Time:**\n{start_time.strftime('%Y-%m-%d %H:%M')} UTC\n\n"
+                        f"**End Time:**\n{end_time.strftime('%Y-%m-%d %H:%M')} UTC"
+                    )
+                    embed.add_field(
+                        name="⏰ Time Information", value=time_info, inline=False
+                    )
+
+                    # Add competition details
+                    details = f"**Type:** {event_details['format']}\n**Weight:** {event_details['weight']}\n"
+                    if event_details["location"]:
+                        details += f"**Location:** {event_details['location']}\n"
+                    embed.add_field(
+                        name="📋 Competition Details", value=details, inline=False
+                    )
+
+                    # Add links
+                    links = (
+                        f"**Official Link:**\n[Click to Visit]({event_details['url']})\n\n"
+                        f"**CTFtime Link:**\n[Click to Visit]({event_details['ctftime_url']})"
+                    )
+                    embed.add_field(name="🔗 Links", value=links, inline=False)
+
+                    embed.set_footer(text="Use !joinctf <id> to join this competition")
+                    await channel.send(embed=embed)
+
+    except Exception as e:
+        print(f"Error checking team events: {str(e)}")
+
+
 @bot.event
 async def on_ready():
     print(f"{bot.user} has successfully started!")
-    # Start scheduled check task (if not already running)
+    # Start scheduled check tasks
     if not check_ctf_events.is_running():
         check_ctf_events.start()
+    if not check_team_events.is_running():
+        check_team_events.start()
 
 
 @bot.command()

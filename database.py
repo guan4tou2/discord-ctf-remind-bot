@@ -36,6 +36,26 @@ class Database:
             )
         """)
 
+        # Create guild_settings table
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS guild_settings (
+                guild_id TEXT PRIMARY KEY,
+                notification_channel_id TEXT,
+                ctftime_team_id TEXT
+            )
+        """)
+
+        # Check if guild_settings table has ctftime_team_id column
+        c.execute("PRAGMA table_info(guild_settings)")
+        guild_settings_columns = [column[1] for column in c.fetchall()]
+        if "ctftime_team_id" not in guild_settings_columns:
+            try:
+                c.execute("ALTER TABLE guild_settings ADD COLUMN ctftime_team_id TEXT")
+                conn.commit()
+            except sqlite3.OperationalError:
+                # Column might already exist, ignore error
+                pass
+
         # If table exists but doesn't have invite_link column, add it
         if "invite_link" not in columns:
             try:
@@ -74,14 +94,6 @@ class Database:
                 timezone TEXT NOT NULL,
                 updated_time TEXT NOT NULL,
                 PRIMARY KEY (user_id, guild_id)
-            )
-        """)
-
-        # Create guild_settings table
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS guild_settings (
-                guild_id TEXT PRIMARY KEY,
-                notification_channel_id TEXT
             )
         """)
 
@@ -467,6 +479,55 @@ class Database:
             return result[0] if result else None
         except Exception as e:
             print(f"Error getting notification channel: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def set_ctftime_team_id(self, guild_id: str, team_id: str) -> bool:
+        """Set CTFtime team ID for a guild"""
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+
+        try:
+            c.execute(
+                """
+                UPDATE guild_settings 
+                SET ctftime_team_id = ? 
+                WHERE guild_id = ?
+                """,
+                (team_id, guild_id),
+            )
+            if c.rowcount == 0:
+                # If no row was updated, insert a new one
+                c.execute(
+                    """
+                    INSERT INTO guild_settings (guild_id, ctftime_team_id)
+                    VALUES (?, ?)
+                    """,
+                    (guild_id, team_id),
+                )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error setting CTFtime team ID: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_ctftime_team_id(self, guild_id: str) -> str:
+        """Get CTFtime team ID for a guild"""
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+
+        try:
+            c.execute(
+                "SELECT ctftime_team_id FROM guild_settings WHERE guild_id = ?",
+                (guild_id,),
+            )
+            result = c.fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            print(f"Error getting CTFtime team ID: {e}")
             return None
         finally:
             conn.close()
