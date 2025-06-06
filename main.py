@@ -30,8 +30,7 @@ async def timezone(ctx, timezone_str: str = None):
     """Set or view timezone
     Usage:
     !timezone - View current timezone setting
-    !timezone list - Show common timezone list
-    !timezone <timezone> - Set timezone, e.g.: !timezone Asia/Taipei
+    !timezone list - Show timezone selection menu
     """
     try:
         if timezone_str is None:
@@ -49,14 +48,12 @@ async def timezone(ctx, timezone_str: str = None):
                 value=current_time.strftime("%Y-%m-%d %H:%M:%S %Z"),
                 inline=False,
             )
-            embed.set_footer(
-                text="Use !timezone list to view available timezones | Use !timezone <timezone> to change timezone"
-            )
+            embed.set_footer(text="Use !timezone list to change timezone")
             await ctx.send(embed=embed)
             return
 
         if timezone_str.lower() == "list":
-            # Show common timezone list
+            # Create timezone selection menu
             common_timezones = {
                 "Asia": [
                     "Asia/Taipei",  # Taipei
@@ -85,28 +82,91 @@ async def timezone(ctx, timezone_str: str = None):
                 ],
             }
 
+            # Create embed
             embed = discord.Embed(
-                title="🌍 Common Timezone List",
-                description="Below are common timezone settings, you can use `!timezone <timezone>` to set.",
+                title="🌍 Select Your Timezone",
+                description="Please select your timezone from the menu below.",
                 color=discord.Color.blue(),
             )
 
-            for region, zones in common_timezones.items():
-                value = "\n".join([f"`{zone}`" for zone in zones])
-                embed.add_field(name=region, value=value, inline=False)
+            # Add timezone groups to embed
+            # for region, zones in common_timezones.items():
+            #     value = "\n".join([f"`{zone}`" for zone in zones])
+            #     embed.add_field(name=region, value=value, inline=False)
 
-            embed.set_footer(text="Use !timezone <timezone> to set timezone")
-            await ctx.send(embed=embed)
+            # Create select menu
+            select = discord.ui.Select(
+                placeholder="Choose your timezone...",
+                min_values=1,
+                max_values=1,
+            )
+
+            # Add options to select menu
+            for region, zones in common_timezones.items():
+                for zone in zones:
+                    # Get current time in this timezone
+                    tz = pytz.timezone(zone)
+                    current_time = datetime.now(tz)
+                    time_str = current_time.strftime("%H:%M")
+
+                    # Create option label with current time
+                    label = f"{zone.split('/')[-1].replace('_', ' ')} ({time_str})"
+                    select.add_option(
+                        label=label, value=zone, description=f"Current time: {time_str}"
+                    )
+
+            # Create view with select menu
+            view = discord.ui.View()
+            view.add_item(select)
+
+            # Add callback for select menu
+            async def select_callback(interaction: discord.Interaction):
+                if interaction.user.id != ctx.author.id:
+                    await interaction.response.send_message(
+                        "❌ This menu is not for you!", ephemeral=True
+                    )
+                    return
+
+                selected_timezone = select.values[0]
+                if db.set_user_timezone(
+                    str(ctx.author.id), str(ctx.guild.id), selected_timezone
+                ):
+                    # Get current time in new timezone
+                    tz = pytz.timezone(selected_timezone)
+                    current_time = datetime.now(tz)
+
+                    embed = discord.Embed(
+                        title="✅ Timezone Updated",
+                        color=discord.Color.green(),
+                    )
+                    embed.add_field(
+                        name="New Timezone", value=selected_timezone, inline=False
+                    )
+                    embed.add_field(
+                        name="Current Time",
+                        value=current_time.strftime("%Y-%m-%d %H:%M:%S %Z"),
+                        inline=False,
+                    )
+                    await interaction.response.edit_message(embed=embed, view=None)
+                else:
+                    await interaction.response.send_message(
+                        "❌ Error setting timezone", ephemeral=True
+                    )
+
+            select.callback = select_callback
+
+            # Send message with select menu
+            await ctx.send(embed=embed, view=view)
             return
 
-        # Validate timezone
+        # If timezone is provided directly (legacy support)
         try:
             tz = pytz.timezone(timezone_str)
             # Test if timezone is valid
             datetime.now(tz)
         except pytz.exceptions.UnknownTimeZoneError:
             await ctx.send(
-                "❌ Invalid timezone! Please use `!timezone list` to view available timezones"
+                "❌ Invalid timezone! Please use `!timezone list` to select a timezone"
             )
             return
 
