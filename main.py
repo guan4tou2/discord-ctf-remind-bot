@@ -203,172 +203,188 @@ def convert_to_user_timezone(dt: datetime, user_id: str, guild_id: str) -> datet
 @tasks.loop(minutes=1)  # Check every minute
 async def check_ctf_events():
     """Check CTF competition times and send reminders"""
-    # Only run at the start of each hour
-    if datetime.now().minute != 0:
-        return
-
     try:
         for guild in bot.guilds:
             events = db.get_all_events(str(guild.id))
-            # Use UTC time
             now = datetime.now(pytz.UTC)
 
             for event in events:
                 start_time = datetime.fromisoformat(event["start_time"])
                 end_time = datetime.fromisoformat(event["end_time"])
 
-                # Skip if competition has ended
+                # 跳過已結束的比賽
                 if now > end_time:
                     continue
 
-                # Get role
-                role_name = f"CTF-{event['name']}"
-                role = discord.utils.get(guild.roles, name=role_name)
-                if not role:
-                    continue
+                # 取得該比賽的所有參與者
+                participants = db.get_event_participants(
+                    event["event_id"], str(guild.id)
+                )
 
-                # Calculate time difference
-                time_diff = start_time - now
+                for participant in participants:
+                    user_id = participant["user_id"]
 
-                # Check if it's reminder time
-                if (
-                    timedelta(hours=23) <= time_diff <= timedelta(hours=24)
-                ):  # One day before start
-                    # Create notification embed
-                    embed = discord.Embed(
-                        title="⏰ CTF Competition Starting Soon",
-                        description=f"{role.mention} Competition starts in 24 hours!",
-                        color=discord.Color.orange(),
+                    # 取得使用者的提醒設定
+                    before_start, before_end = db.get_reminder_settings(
+                        event["event_id"], str(guild.id), user_id
                     )
-                    embed.add_field(
-                        name="Competition Name", value=event["name"], inline=False
+                    if not before_start and not before_end:
+                        # 使用預設值
+                        before_start = "24h_before,1h_before"
+                        before_end = "1h_before_end,10m_before_end"
+
+                    # 轉換時間到使用者時區
+                    user_start_time = convert_to_user_timezone(
+                        start_time, user_id, str(guild.id)
                     )
-
-                    # Get all participants' timezones
-                    participants = db.get_event_participants(
-                        event["event_id"], str(guild.id)
-                    )
-                    for participant in participants:
-                        user_id = participant["user_id"]
-                        local_start = convert_to_user_timezone(
-                            start_time, user_id, str(guild.id)
-                        )
-                        local_end = convert_to_user_timezone(
-                            end_time, user_id, str(guild.id)
-                        )
-
-                        # Calculate time remaining
-                        now = datetime.now(local_start.tzinfo)
-                        time_remaining = local_start - now
-                        days = time_remaining.days
-                        hours = time_remaining.seconds // 3600
-                        minutes = (time_remaining.seconds % 3600) // 60
-
-                        time_info = (
-                            f"**Start Time:**\n{local_start.strftime('%Y-%m-%d %H:%M')} ({local_start.tzinfo})\n\n"
-                            f"**Time Remaining:**\n{days} days, {hours} hours, {minutes} minutes\n\n"
-                            f"**End Time:**\n{local_end.strftime('%Y-%m-%d %H:%M')} ({local_end.tzinfo})"
-                        )
-                        embed.add_field(
-                            name=f"⏰ Time Information ({local_start.tzinfo})",
-                            value=time_info,
-                            inline=False,
-                        )
-
-                    if event["official_url"]:
-                        embed.add_field(
-                            name="Official Link",
-                            value=event["official_url"],
-                            inline=False,
-                        )
-
-                    # Send to notification channel if set
-                    channel_id = db.get_notification_channel(str(guild.id))
-                    if channel_id:
-                        try:
-                            channel = guild.get_channel(int(channel_id))
-                            if channel:
-                                await channel.send(embed=embed)
-                        except Exception as e:
-                            print(f"Error sending to notification channel: {e}")
-
-                    # Send DM to all members with the role
-                    for member in role.members:
-                        try:
-                            await member.send(embed=embed)
-                        except discord.Forbidden:
-                            continue  # Skip if cannot send DM to member
-
-                elif (
-                    timedelta(minutes=0) <= time_diff <= timedelta(minutes=5)
-                ):  # At start time
-                    # Create notification embed
-                    embed = discord.Embed(
-                        title="🚀 CTF Competition Started",
-                        description=f"{role.mention} Competition has started!",
-                        color=discord.Color.green(),
-                    )
-                    embed.add_field(
-                        name="Competition Name", value=event["name"], inline=False
+                    user_end_time = convert_to_user_timezone(
+                        end_time, user_id, str(guild.id)
                     )
 
-                    # Get all participants' timezones
-                    participants = db.get_event_participants(
-                        event["event_id"], str(guild.id)
-                    )
-                    for participant in participants:
-                        user_id = participant["user_id"]
-                        local_start = convert_to_user_timezone(
-                            start_time, user_id, str(guild.id)
-                        )
-                        local_end = convert_to_user_timezone(
-                            end_time, user_id, str(guild.id)
-                        )
+                    # 檢查開始時間提醒
+                    if before_start:
+                        for remind_time in before_start.split(","):
+                            if remind_time == "24h_before":
+                                time_diff = user_start_time - now
+                                if (
+                                    timedelta(hours=23, minutes=55)
+                                    <= time_diff
+                                    <= timedelta(hours=24, minutes=5)
+                                ):
+                                    await send_reminder(
+                                        guild,
+                                        user_id,
+                                        event,
+                                        "24小時",
+                                        user_start_time,
+                                        user_end_time,
+                                    )
+                            elif remind_time == "12h_before":
+                                time_diff = user_start_time - now
+                                if (
+                                    timedelta(hours=11, minutes=55)
+                                    <= time_diff
+                                    <= timedelta(hours=12, minutes=5)
+                                ):
+                                    await send_reminder(
+                                        guild,
+                                        user_id,
+                                        event,
+                                        "12小時",
+                                        user_start_time,
+                                        user_end_time,
+                                    )
+                            elif remind_time == "1h_before":
+                                time_diff = user_start_time - now
+                                if (
+                                    timedelta(minutes=55)
+                                    <= time_diff
+                                    <= timedelta(hours=1, minutes=5)
+                                ):
+                                    await send_reminder(
+                                        guild,
+                                        user_id,
+                                        event,
+                                        "1小時",
+                                        user_start_time,
+                                        user_end_time,
+                                    )
 
-                        # Calculate time remaining
-                        now = datetime.now(local_end.tzinfo)
-                        time_remaining = local_end - now
-                        days = time_remaining.days
-                        hours = time_remaining.seconds // 3600
-                        minutes = (time_remaining.seconds % 3600) // 60
-
-                        time_info = (
-                            f"**Start Time:**\n{local_start.strftime('%Y-%m-%d %H:%M')} ({local_start.tzinfo})\n\n"
-                            f"**Time Remaining:**\n{days} days, {hours} hours, {minutes} minutes\n\n"
-                            f"**End Time:**\n{local_end.strftime('%Y-%m-%d %H:%M')} ({local_end.tzinfo})"
-                        )
-                        embed.add_field(
-                            name=f"⏰ Time Information ({local_start.tzinfo})",
-                            value=time_info,
-                            inline=False,
-                        )
-
-                    if event["official_url"]:
-                        embed.add_field(
-                            name="Official Link",
-                            value=event["official_url"],
-                            inline=False,
-                        )
-
-                    # Send to notification channel if set
-                    channel_id = db.get_notification_channel(str(guild.id))
-                    if channel_id:
-                        try:
-                            channel = guild.get_channel(int(channel_id))
-                            if channel:
-                                await channel.send(embed=embed)
-                        except Exception as e:
-                            print(f"Error sending to notification channel: {e}")
-
-                    # Send DM to all members with the role
-                    for member in role.members:
-                        try:
-                            await member.send(embed=embed)
-                        except discord.Forbidden:
-                            continue  # Skip if cannot send DM to member
+                    # 檢查結束時間提醒
+                    if (
+                        before_end and now > user_start_time
+                    ):  # 只在比賽開始後檢查結束時間提醒
+                        for remind_time in before_end.split(","):
+                            if remind_time == "1h_before_end":
+                                time_diff = user_end_time - now
+                                if (
+                                    timedelta(minutes=55)
+                                    <= time_diff
+                                    <= timedelta(hours=1, minutes=5)
+                                ):
+                                    await send_reminder(
+                                        guild,
+                                        user_id,
+                                        event,
+                                        "1小時",
+                                        user_start_time,
+                                        user_end_time,
+                                        is_end=True,
+                                    )
+                            elif remind_time == "30m_before_end":
+                                time_diff = user_end_time - now
+                                if (
+                                    timedelta(minutes=25)
+                                    <= time_diff
+                                    <= timedelta(minutes=35)
+                                ):
+                                    await send_reminder(
+                                        guild,
+                                        user_id,
+                                        event,
+                                        "30分鐘",
+                                        user_start_time,
+                                        user_end_time,
+                                        is_end=True,
+                                    )
+                            elif remind_time == "10m_before_end":
+                                time_diff = user_end_time - now
+                                if (
+                                    timedelta(minutes=8)
+                                    <= time_diff
+                                    <= timedelta(minutes=12)
+                                ):
+                                    await send_reminder(
+                                        guild,
+                                        user_id,
+                                        event,
+                                        "10分鐘",
+                                        user_start_time,
+                                        user_end_time,
+                                        is_end=True,
+                                    )
 
     except Exception as e:
         print(f"Error checking CTF competitions: {str(e)}")
+
+
+async def send_reminder(
+    guild, user_id, event, time_str, start_time, end_time, is_end=False
+):
+    """發送提醒訊息"""
+    try:
+        member = await guild.fetch_member(int(user_id))
+        if not member:
+            return
+
+        embed = discord.Embed(
+            title="🏁 比賽即將結束" if is_end else "🎯 比賽即將開始",
+            description=f"比賽：{event['name']}\n\n距離比賽{'結束' if is_end else '開始'}還有 {time_str}",
+            color=discord.Color.red() if is_end else discord.Color.green(),
+        )
+
+        time_info = (
+            f"**開始時間：**\n{start_time.strftime('%Y-%m-%d %H:%M')} ({start_time.tzinfo})\n\n"
+            f"**結束時間：**\n{end_time.strftime('%Y-%m-%d %H:%M')} ({end_time.tzinfo})"
+        )
+        embed.add_field(name="⏰ 時間資訊", value=time_info, inline=False)
+
+        if event["official_url"]:
+            embed.add_field(
+                name="🔗 比賽連結", value=event["official_url"], inline=False
+            )
+
+        try:
+            await member.send(embed=embed)
+        except discord.Forbidden:
+            # 如果無法發送DM，嘗試在通知頻道提醒
+            channel_id = db.get_notification_channel(str(guild.id))
+            if channel_id:
+                channel = guild.get_channel(int(channel_id))
+                if channel:
+                    await channel.send(f"{member.mention}", embed=embed)
+    except Exception as e:
+        print(f"Error sending reminder: {str(e)}")
 
 
 @bot.command()
@@ -1062,6 +1078,109 @@ async def delctf(ctx, event_id: str):
 
 
 @bot.command()
+async def listctf(ctx):
+    """List all added CTF competitions"""
+    events = db.get_all_events(str(ctx.guild.id))
+
+    if not events:
+        await ctx.send("📝 No CTF competitions added yet")
+        return
+
+    # Sort by start time
+    events.sort(key=lambda x: x["start_time"])
+
+    # Create main embed
+    main_embed = discord.Embed(
+        title="📋 CTF Competition List",
+        description=f"Total: {len(events)} competitions",
+        color=discord.Color.blue(),
+    )
+
+    # Add competition info
+    for i, event in enumerate(events, 1):
+        start_time = datetime.fromisoformat(event["start_time"])
+        end_time = datetime.fromisoformat(event["end_time"])
+
+        # Convert to user's timezone
+        user_start_time = convert_to_user_timezone(
+            start_time, str(ctx.author.id), str(ctx.guild.id)
+        )
+        user_end_time = convert_to_user_timezone(
+            end_time, str(ctx.author.id), str(ctx.guild.id)
+        )
+
+        # Calculate remaining time (ensure timezone consistency)
+        now = datetime.now(user_start_time.tzinfo)
+        time_left = user_start_time - now
+
+        # Set status and color
+        if now > user_end_time:
+            status = "Ended"
+            color = "🔴"
+        elif now > user_start_time:
+            status = "In Progress"
+            color = "🟢"
+        else:
+            days = time_left.days
+            if days > 7:
+                status = f"{days} days left"
+                color = "⚪"
+            elif days > 0:
+                status = f"{days} days left"
+                color = "🟡"
+            else:
+                hours = time_left.seconds // 3600
+                status = f"{hours} hours left"
+                color = "🟠"
+
+        # Get adder info
+        adder = None
+        if event.get("added_by"):
+            try:
+                adder = await ctx.guild.fetch_member(event["added_by"])
+            except discord.NotFound:
+                # Member not found (left the server)
+                adder = None
+            except discord.HTTPException:
+                # Failed to fetch member
+                adder = None
+            except Exception as e:
+                print(f"Error fetching member: {e}")
+                adder = None
+
+        # Create competition info field
+        value = (
+            f"**ID:** `{event['event_id']}`\n\n"
+            f"**Start Time:**\n{user_start_time.strftime('%Y-%m-%d %H:%M')} ({user_start_time.tzinfo})\n\n"
+            f"**End Time:**\n{user_end_time.strftime('%Y-%m-%d %H:%M')} ({user_end_time.tzinfo})\n\n"
+            f"**Type:** {event['event_type']}\n"
+            f"**Weight:** {event['weight']}\n"
+            f"**Location:** {event['location']}\n"
+            f"**Status:** {color} {status}\n"
+            f"**Added by:** {adder.mention if adder else 'Unknown'}"
+        )
+
+        # Add links
+        if event["official_url"]:
+            value += f"\n\n**Official Link:**\n{event['official_url']}"
+        if event["ctftime_url"]:
+            value += f"\n\n**CTFtime:**\n{event['ctftime_url']}"
+
+        # Add separator
+        if i < len(events):
+            value += "\n\n" + "─" * 30
+
+        main_embed.add_field(name=f"🏆 {event['name']}", value=value, inline=False)
+
+    # Add footer
+    main_embed.set_footer(
+        text="Use !addctf <id> to add competition | Use !delctf <id> to delete competition"
+    )
+
+    await ctx.send(embed=main_embed)
+
+
+@bot.command()
 @commands.has_permissions(administrator=True)
 async def invitectf(ctx, event_id: str, invite_link: str = None):
     """Set or view competition invite link"""
@@ -1529,6 +1648,142 @@ async def participants(ctx, event_id: str):
 
     except Exception as e:
         await ctx.send(f"❌ Error occurred: {str(e)}")
+
+
+class ReminderSelect(discord.ui.View):
+    def __init__(self, event_id: str, event_name: str):
+        super().__init__(timeout=300)  # 5分钟超时
+        self.event_id = event_id
+        self.event_name = event_name
+        self.selected_start = []
+        self.selected_end = []
+
+    @discord.ui.select(
+        placeholder="選擇比賽開始前的提醒時間",
+        min_values=0,
+        max_values=3,
+        options=[
+            discord.SelectOption(label="24小時前", value="24h_before"),
+            discord.SelectOption(label="12小時前", value="12h_before"),
+            discord.SelectOption(label="1小時前", value="1h_before"),
+        ],
+    )
+    async def start_select(
+        self, interaction: discord.Interaction, select: discord.ui.Select
+    ):
+        self.selected_start = select.values
+        await interaction.response.defer()
+
+    @discord.ui.select(
+        placeholder="選擇比賽結束前的提醒時間",
+        min_values=0,
+        max_values=3,
+        options=[
+            discord.SelectOption(label="1小時前", value="1h_before_end"),
+            discord.SelectOption(label="30分鐘前", value="30m_before_end"),
+            discord.SelectOption(label="10分鐘前", value="10m_before_end"),
+        ],
+    )
+    async def end_select(
+        self, interaction: discord.Interaction, select: discord.ui.Select
+    ):
+        self.selected_end = select.values
+        await interaction.response.defer()
+
+    @discord.ui.button(label="確認設定", style=discord.ButtonStyle.green)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        # 如果都沒選，使用預設值
+        if not self.selected_start and not self.selected_end:
+            self.selected_start = ["24h_before", "1h_before"]
+            self.selected_end = ["1h_before_end", "10m_before_end"]
+
+        # 儲存設定
+        if db.set_reminder_settings(
+            self.event_id,
+            str(interaction.guild_id),
+            str(interaction.user.id),
+            ",".join(self.selected_start) if self.selected_start else "",
+            ",".join(self.selected_end) if self.selected_end else "",
+        ):
+            embed = discord.Embed(
+                title="✅ 提醒設定已更新",
+                description=f"比賽：{self.event_name}",
+                color=discord.Color.green(),
+            )
+
+            if self.selected_start:
+                start_times = []
+                for time in self.selected_start:
+                    if time == "24h_before":
+                        start_times.append("24小時前")
+                    elif time == "12h_before":
+                        start_times.append("12小時前")
+                    elif time == "1h_before":
+                        start_times.append("1小時前")
+                embed.add_field(
+                    name="比賽開始前提醒", value="\n".join(start_times), inline=False
+                )
+
+            if self.selected_end:
+                end_times = []
+                for time in self.selected_end:
+                    if time == "1h_before_end":
+                        end_times.append("1小時前")
+                    elif time == "30m_before_end":
+                        end_times.append("30分鐘前")
+                    elif time == "10m_before_end":
+                        end_times.append("10分鐘前")
+                embed.add_field(
+                    name="比賽結束前提醒", value="\n".join(end_times), inline=False
+                )
+
+            # 發送確認訊息
+            await interaction.response.send_message(embed=embed, ephemeral=False)
+
+            # 刪除原始訊息
+            try:
+                await interaction.message.delete()
+            except discord.NotFound:
+                pass  # 訊息已被刪除
+            except discord.Forbidden:
+                print("無權限刪除訊息")
+            except Exception as e:
+                print(f"刪除訊息時發生錯誤: {e}")
+        else:
+            await interaction.response.send_message(
+                "❌ 設定提醒時間失敗", ephemeral=True
+            )
+
+
+@bot.command()
+async def setremind(ctx, event_id: str = None):
+    """設定比賽提醒時間
+    用法:
+    !setremind <比賽ID> - 設定指定比賽的提醒時間
+    """
+    if not event_id:
+        await ctx.send("❌ 請提供比賽ID")
+        return
+
+    event = db.get_event(event_id, str(ctx.guild.id))
+    if not event:
+        await ctx.send("❌ 找不到該比賽")
+        return
+
+    # 檢查是否已加入比賽
+    if not db.is_user_joined(event_id, str(ctx.guild.id), str(ctx.author.id)):
+        await ctx.send("❌ 你尚未加入該比賽")
+        return
+
+    view = ReminderSelect(event_id=event_id, event_name=event["name"])
+    embed = discord.Embed(
+        title="⏰ 設定比賽提醒時間",
+        description=f"比賽：{event['name']}\n\n請選擇你想要在比賽開始和結束前多久收到提醒\n不選擇則使用預設值：\n比賽開始前24小時和1小時\n比賽結束前1小時和10分鐘",
+        color=discord.Color.blue(),
+    )
+    await ctx.send(embed=embed, view=view)
 
 
 # Run the bot

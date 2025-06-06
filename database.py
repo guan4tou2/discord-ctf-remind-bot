@@ -82,7 +82,20 @@ class Database:
                 user_id TEXT,
                 join_time TEXT NOT NULL,
                 PRIMARY KEY (event_id, guild_id, user_id),
-                FOREIGN KEY (event_id, guild_id) REFERENCES ctf_events(event_id, guild_id)
+                FOREIGN KEY (event_id, guild_id) REFERENCES ctf_events (event_id, guild_id)
+            )
+        """)
+
+        # Create reminder_settings table
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS reminder_settings (
+                event_id TEXT,
+                guild_id TEXT,
+                user_id TEXT,
+                before_start TEXT,
+                before_end TEXT,
+                PRIMARY KEY (event_id, guild_id, user_id),
+                FOREIGN KEY (event_id, guild_id) REFERENCES ctf_events (event_id, guild_id)
             )
         """)
 
@@ -529,5 +542,76 @@ class Database:
         except Exception as e:
             print(f"Error getting CTFtime team ID: {e}")
             return None
+        finally:
+            conn.close()
+
+    def set_reminder_settings(
+        self,
+        event_id: str,
+        guild_id: str,
+        user_id: str,
+        before_start: str,
+        before_end: str,
+    ) -> bool:
+        """Set reminder settings for a user in an event"""
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+
+        try:
+            c.execute(
+                """
+                INSERT OR REPLACE INTO reminder_settings (event_id, guild_id, user_id, before_start, before_end)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (event_id, guild_id, user_id, before_start, before_end),
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error setting reminder settings: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_reminder_settings(
+        self, event_id: str, guild_id: str, user_id: str
+    ) -> tuple:
+        """Get reminder settings for a user in an event"""
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+
+        try:
+            c.execute(
+                """
+                SELECT before_start, before_end FROM reminder_settings 
+                WHERE event_id = ? AND guild_id = ? AND user_id = ?
+                """,
+                (event_id, guild_id, user_id),
+            )
+            result = c.fetchone()
+            return result if result else (None, None)
+        except Exception as e:
+            print(f"Error getting reminder settings: {e}")
+            return None, None
+        finally:
+            conn.close()
+
+    def get_all_reminder_settings(self) -> list:
+        """Get all reminder settings"""
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+
+        try:
+            c.execute(
+                """
+                SELECT rs.*, ce.start_time, ce.end_time, ce.name
+                FROM reminder_settings rs
+                JOIN ctf_events ce ON rs.event_id = ce.event_id AND rs.guild_id = ce.guild_id
+                """
+            )
+            return c.fetchall()
+        except Exception as e:
+            print(f"Error getting all reminder settings: {e}")
+            return []
         finally:
             conn.close()
