@@ -239,7 +239,7 @@ class Settings(commands.Cog):
                     value=current_time.strftime("%Y-%m-%d %H:%M:%S %Z"),
                     inline=False,
                 )
-                embed.set_footer(text="Use !timezone list to change timezone")
+                embed.set_footer(text="Use <!timezone list> to change timezone")
                 await ctx.send(embed=embed)
                 return
 
