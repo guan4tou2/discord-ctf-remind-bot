@@ -176,7 +176,7 @@ async def check_ctf_events():
                     # Create notification embed
                     embed = discord.Embed(
                         title="⏰ CTF Competition Starting Soon",
-                        description=f"{role.mention} Competition starts tomorrow!",
+                        description=f"{role.mention} Competition starts in 24 hours!",
                         color=discord.Color.orange(),
                     )
                     embed.add_field(
@@ -196,15 +196,22 @@ async def check_ctf_events():
                             end_time, user_id, str(guild.id)
                         )
 
-                        embed.add_field(
-                            name=f"Start Time ({local_start.tzinfo})",
-                            value=local_start.strftime("%Y-%m-%d %H:%M"),
-                            inline=True,
+                        # Calculate time remaining
+                        now = datetime.now(local_start.tzinfo)
+                        time_remaining = local_start - now
+                        days = time_remaining.days
+                        hours = time_remaining.seconds // 3600
+                        minutes = (time_remaining.seconds % 3600) // 60
+
+                        time_info = (
+                            f"**Start Time:**\n{local_start.strftime('%Y-%m-%d %H:%M')} ({local_start.tzinfo})\n\n"
+                            f"**Time Remaining:**\n{days} days, {hours} hours, {minutes} minutes\n\n"
+                            f"**End Time:**\n{local_end.strftime('%Y-%m-%d %H:%M')} ({local_end.tzinfo})"
                         )
                         embed.add_field(
-                            name=f"End Time ({local_end.tzinfo})",
-                            value=local_end.strftime("%Y-%m-%d %H:%M"),
-                            inline=True,
+                            name=f"⏰ Time Information ({local_start.tzinfo})",
+                            value=time_info,
+                            inline=False,
                         )
 
                     if event["official_url"]:
@@ -214,7 +221,17 @@ async def check_ctf_events():
                             inline=False,
                         )
 
-                    # Send notification to all members with the role
+                    # Send to notification channel if set
+                    channel_id = db.get_notification_channel(str(guild.id))
+                    if channel_id:
+                        try:
+                            channel = guild.get_channel(int(channel_id))
+                            if channel:
+                                await channel.send(embed=embed)
+                        except Exception as e:
+                            print(f"Error sending to notification channel: {e}")
+
+                    # Send DM to all members with the role
                     for member in role.members:
                         try:
                             await member.send(embed=embed)
@@ -240,14 +257,29 @@ async def check_ctf_events():
                     )
                     for participant in participants:
                         user_id = participant["user_id"]
+                        local_start = convert_to_user_timezone(
+                            start_time, user_id, str(guild.id)
+                        )
                         local_end = convert_to_user_timezone(
                             end_time, user_id, str(guild.id)
                         )
 
+                        # Calculate time remaining
+                        now = datetime.now(local_end.tzinfo)
+                        time_remaining = local_end - now
+                        days = time_remaining.days
+                        hours = time_remaining.seconds // 3600
+                        minutes = (time_remaining.seconds % 3600) // 60
+
+                        time_info = (
+                            f"**Start Time:**\n{local_start.strftime('%Y-%m-%d %H:%M')} ({local_start.tzinfo})\n\n"
+                            f"**Time Remaining:**\n{days} days, {hours} hours, {minutes} minutes\n\n"
+                            f"**End Time:**\n{local_end.strftime('%Y-%m-%d %H:%M')} ({local_end.tzinfo})"
+                        )
                         embed.add_field(
-                            name=f"End Time ({local_end.tzinfo})",
-                            value=local_end.strftime("%Y-%m-%d %H:%M"),
-                            inline=True,
+                            name=f"⏰ Time Information ({local_start.tzinfo})",
+                            value=time_info,
+                            inline=False,
                         )
 
                     if event["official_url"]:
@@ -257,7 +289,17 @@ async def check_ctf_events():
                             inline=False,
                         )
 
-                    # Send notification to all members with the role
+                    # Send to notification channel if set
+                    channel_id = db.get_notification_channel(str(guild.id))
+                    if channel_id:
+                        try:
+                            channel = guild.get_channel(int(channel_id))
+                            if channel:
+                                await channel.send(embed=embed)
+                        except Exception as e:
+                            print(f"Error sending to notification channel: {e}")
+
+                    # Send DM to all members with the role
                     for member in role.members:
                         try:
                             await member.send(embed=embed)
