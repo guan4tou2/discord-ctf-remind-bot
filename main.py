@@ -749,6 +749,128 @@ async def setnotify(ctx, channel: discord.TextChannel = None):
         await ctx.send("❌ Error setting notification channel")
 
 
+class CTFButtons(discord.ui.View):
+    def __init__(self, event_id: str, event_name: str):
+        super().__init__(timeout=None)  # Buttons will not timeout
+        self.event_id = event_id
+        self.event_name = event_name
+
+    @discord.ui.button(label="Join CTF", style=discord.ButtonStyle.green, emoji="✅")
+    async def join_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        try:
+            # Check if user already joined
+            if db.is_user_joined(
+                self.event_id, str(interaction.guild_id), str(interaction.user.id)
+            ):
+                await interaction.response.send_message(
+                    f"❌ You have already joined {self.event_name}!", ephemeral=True
+                )
+                return
+
+            # Join competition
+            if db.join_event(
+                self.event_id, str(interaction.guild_id), str(interaction.user.id)
+            ):
+                # Find corresponding role
+                role_name = f"CTF-{self.event_name}"
+                role = discord.utils.get(interaction.guild.roles, name=role_name)
+
+                if role:
+                    try:
+                        await interaction.user.add_roles(role)
+                        success_msg = f"✅ Role added: {role.mention}"
+                    except discord.Forbidden:
+                        success_msg = "⚠️ Could not add role (missing permissions)"
+                    except Exception as e:
+                        success_msg = f"⚠️ Error adding role: {str(e)}"
+                else:
+                    success_msg = "⚠️ Role not found"
+
+                # Get event details for DM
+                event = db.get_event(self.event_id, str(interaction.guild_id))
+                if event and event.get("invite_link"):
+                    try:
+                        # Send invite link via DM
+                        embed = discord.Embed(
+                            title="🔗 CTF Competition Invite Link",
+                            description=f"Competition: {self.event_name}",
+                            color=discord.Color.blue(),
+                        )
+                        embed.add_field(
+                            name="Invite Link", value=event["invite_link"], inline=False
+                        )
+                        embed.add_field(
+                            name="Note",
+                            value="Please keep this link private and do not share it with non-participants.",
+                            inline=False,
+                        )
+                        await interaction.user.send(embed=embed)
+                        success_msg += "\n✉️ Invite link has been sent via DM"
+                    except discord.Forbidden:
+                        success_msg += "\n⚠️ Could not send invite link (DMs are closed)"
+
+                await interaction.response.send_message(
+                    f"✅ Successfully joined {self.event_name}\n{success_msg}",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ Error joining competition", ephemeral=True
+                )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Error occurred: {str(e)}", ephemeral=True
+            )
+
+    @discord.ui.button(label="Leave CTF", style=discord.ButtonStyle.red, emoji="🚪")
+    async def leave_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        try:
+            # Check if user has joined
+            if not db.is_user_joined(
+                self.event_id, str(interaction.guild_id), str(interaction.user.id)
+            ):
+                await interaction.response.send_message(
+                    f"❌ You haven't joined {self.event_name}!", ephemeral=True
+                )
+                return
+
+            # Leave competition
+            if db.leave_event(
+                self.event_id, str(interaction.guild_id), str(interaction.user.id)
+            ):
+                # Remove role
+                role_name = f"CTF-{self.event_name}"
+                role = discord.utils.get(interaction.guild.roles, name=role_name)
+
+                if role and role in interaction.user.roles:
+                    try:
+                        await interaction.user.remove_roles(role)
+                        success_msg = f"✅ Role removed: {role.mention}"
+                    except discord.Forbidden:
+                        success_msg = "⚠️ Could not remove role (missing permissions)"
+                    except Exception as e:
+                        success_msg = f"⚠️ Error removing role: {str(e)}"
+                else:
+                    success_msg = ""
+
+                await interaction.response.send_message(
+                    f"✅ Successfully left {self.event_name}\n{success_msg}",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ Error leaving competition", ephemeral=True
+                )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Error occurred: {str(e)}", ephemeral=True
+            )
+
+
 @bot.command()
 async def addctf(ctx, event_id: str):
     """Add CTF competition to reminder list
@@ -785,8 +907,6 @@ async def addctf(ctx, event_id: str):
             event["ctftime_url"],
             str(ctx.author.id),  # Adder's ID
         ):
-            # Get user timezone
-            user_timezone = db.get_user_timezone(str(ctx.author.id), str(ctx.guild.id))
             # Create role
             try:
                 role = await ctx.guild.create_role(
@@ -794,35 +914,24 @@ async def addctf(ctx, event_id: str):
                     color=discord.Color.blue(),
                     reason=f"Creating role for CTF competition {event['title']}",
                 )
-                await ctx.send(f"✅ Role created: {role.mention}")
             except discord.Forbidden:
                 await ctx.send("❌ No permission to create roles")
             except Exception as e:
                 await ctx.send(f"❌ Error creating role: {str(e)}")
-            if not user_timezone:
-                user_timezone = "UTC"
 
-            # Convert time to user timezone
-            start_time = convert_to_user_timezone(
-                datetime.fromisoformat(event["start"]), user_timezone, str(ctx.guild.id)
-            )
-            end_time = convert_to_user_timezone(
-                datetime.fromisoformat(event["finish"]),
-                user_timezone,
-                str(ctx.guild.id),
-            )
-
-            # Create embed
+            # Create embed with buttons
             embed = discord.Embed(
-                title="🎯 CTF Competition Added",
+                title="🎯 New CTF Competition Added",
                 description=f"**Competition Name:**\n{event['title']}\n\n**ID:** `{event_id}`",
                 color=discord.Color.blue(),
             )
 
             # Add time information
+            start_time = datetime.fromisoformat(event["start"])
+            end_time = datetime.fromisoformat(event["finish"])
             time_info = (
-                f"**Start Time:**\n{start_time.strftime('%Y-%m-%d %H:%M')} ({start_time.tzinfo})\n\n"
-                f"**End Time:**\n{end_time.strftime('%Y-%m-%d %H:%M')} ({end_time.tzinfo})"
+                f"**Start Time:**\n{start_time.strftime('%Y-%m-%d %H:%M')} UTC\n\n"
+                f"**End Time:**\n{end_time.strftime('%Y-%m-%d %H:%M')} UTC"
             )
             embed.add_field(name="⏰ Time Information", value=time_info, inline=False)
 
@@ -835,46 +944,28 @@ async def addctf(ctx, event_id: str):
             # Add links
             links = (
                 f"**Official Link:**\n[Click to Visit]({event['url']})\n\n"
-                f"**CTFTime Link:**\n[Click to Visit]({event['ctftime_url']})"
+                f"**CTFtime Link:**\n[Click to Visit]({event['ctftime_url']})"
             )
             embed.add_field(name="🔗 Links", value=links, inline=False)
 
-            # Add footer
-            embed.set_footer(text="Use !joinctf <id> to join this competition")
+            # Create view with buttons
+            view = CTFButtons(event_id=event_id, event_name=event["title"])
 
-            # Update loading message to success message
-            await loading_msg.edit(content=None, embed=embed)
+            # Update loading message with embed and buttons
+            await loading_msg.edit(content=None, embed=embed, view=view)
 
             # Send to notification channel if set
             channel_id = db.get_notification_channel(str(ctx.guild.id))
-            if channel_id:
+            if channel_id and channel_id != str(ctx.channel.id):
                 try:
                     channel = ctx.guild.get_channel(int(channel_id))
                     if channel:
-                        # Create notification embed
-                        notify_embed = discord.Embed(
-                            title="🎯 New CTF Competition Added",
-                            description=f"**Competition Name:**\n{event['title']}\n\n**ID:** `{event_id}`",
-                            color=discord.Color.blue(),
+                        await channel.send(
+                            embed=embed,
+                            view=CTFButtons(
+                                event_id=event_id, event_name=event["title"]
+                            ),
                         )
-                        notify_embed.add_field(
-                            name="⏰ Time Information", value=time_info, inline=False
-                        )
-                        notify_embed.add_field(
-                            name="📋 Competition Details", value=details, inline=False
-                        )
-                        notify_embed.add_field(
-                            name="🔗 Links", value=links, inline=False
-                        )
-                        notify_embed.add_field(
-                            name="Added by",
-                            value=ctx.author.mention,
-                            inline=False,
-                        )
-                        notify_embed.set_footer(
-                            text="Use !joinctf <id> to join this competition"
-                        )
-                        await channel.send(embed=notify_embed)
                 except Exception as e:
                     print(f"Error sending to notification channel: {e}")
 
