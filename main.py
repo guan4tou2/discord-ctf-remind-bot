@@ -139,9 +139,13 @@ def convert_to_user_timezone(dt: datetime, user_id: str, guild_id: str) -> datet
         return dt
 
 
-@tasks.loop(minutes=60)  # Check every 60 minutes
+@tasks.loop(minutes=1)  # Check every minute
 async def check_ctf_events():
     """Check CTF competition times and send reminders"""
+    # Only run at the start of each hour
+    if datetime.now().minute != 0:
+        return
+
     try:
         for guild in bot.guilds:
             events = db.get_all_events(str(guild.id))
@@ -169,88 +173,96 @@ async def check_ctf_events():
                 if (
                     timedelta(hours=23) <= time_diff <= timedelta(hours=24)
                 ):  # One day before start
-                    # Find system notification channel
-                    system_channel = guild.system_channel
-                    if system_channel:
-                        embed = discord.Embed(
-                            title="⏰ CTF Competition Starting Soon",
-                            description=f"{role.mention} Competition starts tomorrow!",
-                            color=discord.Color.orange(),
+                    # Create notification embed
+                    embed = discord.Embed(
+                        title="⏰ CTF Competition Starting Soon",
+                        description=f"{role.mention} Competition starts tomorrow!",
+                        color=discord.Color.orange(),
+                    )
+                    embed.add_field(
+                        name="Competition Name", value=event["name"], inline=False
+                    )
+
+                    # Get all participants' timezones
+                    participants = db.get_event_participants(
+                        event["event_id"], str(guild.id)
+                    )
+                    for participant in participants:
+                        user_id = participant["user_id"]
+                        local_start = convert_to_user_timezone(
+                            start_time, user_id, str(guild.id)
+                        )
+                        local_end = convert_to_user_timezone(
+                            end_time, user_id, str(guild.id)
+                        )
+
+                        embed.add_field(
+                            name=f"Start Time ({local_start.tzinfo})",
+                            value=local_start.strftime("%Y-%m-%d %H:%M"),
+                            inline=True,
                         )
                         embed.add_field(
-                            name="Competition Name", value=event["name"], inline=False
+                            name=f"End Time ({local_end.tzinfo})",
+                            value=local_end.strftime("%Y-%m-%d %H:%M"),
+                            inline=True,
                         )
 
-                        # Get all participants' timezones
-                        participants = db.get_event_participants(
-                            event["event_id"], str(guild.id)
+                    if event["official_url"]:
+                        embed.add_field(
+                            name="Official Link",
+                            value=event["official_url"],
+                            inline=False,
                         )
-                        for participant in participants:
-                            user_id = participant["user_id"]
-                            local_start = convert_to_user_timezone(
-                                start_time, user_id, str(guild.id)
-                            )
-                            local_end = convert_to_user_timezone(
-                                end_time, user_id, str(guild.id)
-                            )
 
-                            embed.add_field(
-                                name=f"Start Time ({local_start.tzinfo})",
-                                value=local_start.strftime("%Y-%m-%d %H:%M"),
-                                inline=True,
-                            )
-                            embed.add_field(
-                                name=f"End Time ({local_end.tzinfo})",
-                                value=local_end.strftime("%Y-%m-%d %H:%M"),
-                                inline=True,
-                            )
-
-                        if event["official_url"]:
-                            embed.add_field(
-                                name="Official Link",
-                                value=event["official_url"],
-                                inline=False,
-                            )
-                        await system_channel.send(embed=embed)
+                    # Send notification to all members with the role
+                    for member in role.members:
+                        try:
+                            await member.send(embed=embed)
+                        except discord.Forbidden:
+                            continue  # Skip if cannot send DM to member
 
                 elif (
                     timedelta(minutes=0) <= time_diff <= timedelta(minutes=5)
                 ):  # At start time
-                    # Find system notification channel
-                    system_channel = guild.system_channel
-                    if system_channel:
-                        embed = discord.Embed(
-                            title="🚀 CTF Competition Started",
-                            description=f"{role.mention} Competition has started!",
-                            color=discord.Color.green(),
+                    # Create notification embed
+                    embed = discord.Embed(
+                        title="🚀 CTF Competition Started",
+                        description=f"{role.mention} Competition has started!",
+                        color=discord.Color.green(),
+                    )
+                    embed.add_field(
+                        name="Competition Name", value=event["name"], inline=False
+                    )
+
+                    # Get all participants' timezones
+                    participants = db.get_event_participants(
+                        event["event_id"], str(guild.id)
+                    )
+                    for participant in participants:
+                        user_id = participant["user_id"]
+                        local_end = convert_to_user_timezone(
+                            end_time, user_id, str(guild.id)
                         )
+
                         embed.add_field(
-                            name="Competition Name", value=event["name"], inline=False
+                            name=f"End Time ({local_end.tzinfo})",
+                            value=local_end.strftime("%Y-%m-%d %H:%M"),
+                            inline=True,
                         )
 
-                        # Get all participants' timezones
-                        participants = db.get_event_participants(
-                            event["event_id"], str(guild.id)
+                    if event["official_url"]:
+                        embed.add_field(
+                            name="Official Link",
+                            value=event["official_url"],
+                            inline=False,
                         )
-                        for participant in participants:
-                            user_id = participant["user_id"]
-                            local_end = convert_to_user_timezone(
-                                end_time, user_id, str(guild.id)
-                            )
 
-                            embed.add_field(
-                                name=f"End Time ({local_end.tzinfo})",
-                                value=local_end.strftime("%Y-%m-%d %H:%M"),
-                                inline=True,
-                            )
-
-                        if event["official_url"]:
-                            embed.add_field(
-                                name="Official Link",
-                                value=event["official_url"],
-                                inline=False,
-                            )
-                        await system_channel.send(embed=embed)
+                    # Send notification to all members with the role
+                    for member in role.members:
+                        try:
+                            await member.send(embed=embed)
+                        except discord.Forbidden:
+                            continue  # Skip if cannot send DM to member
 
     except Exception as e:
         print(f"Error checking CTF competitions: {str(e)}")
@@ -325,6 +337,43 @@ async def base64_cmd(ctx, mode: str = None, *, text: str = None):
         await ctx.send(embed=embed)
     except Exception as e:
         await ctx.send(f"❌ Error occurred: {str(e)}")
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setnotify(ctx, channel: discord.TextChannel = None):
+    """Set notification channel for CTF events
+    Usage:
+    !setnotify - View current notification channel
+    !setnotify #channel - Set notification channel
+    """
+    if channel is None:
+        # View current channel
+        channel_id = db.get_notification_channel(str(ctx.guild.id))
+        if channel_id:
+            try:
+                channel = ctx.guild.get_channel(int(channel_id))
+                if channel:
+                    await ctx.send(
+                        f"📢 Current notification channel: {channel.mention}"
+                    )
+                else:
+                    await ctx.send(
+                        "❌ Notification channel not found, please set a new one"
+                    )
+            except Exception:
+                await ctx.send("❌ Error getting notification channel")
+        else:
+            await ctx.send(
+                "❌ No notification channel set, please use `!setnotify #channel` to set one"
+            )
+        return
+
+    # Set new channel
+    if db.set_notification_channel(str(ctx.guild.id), str(channel.id)):
+        await ctx.send(f"✅ Notification channel set to {channel.mention}")
+    else:
+        await ctx.send("❌ Error setting notification channel")
 
 
 @bot.command()
@@ -422,6 +471,40 @@ async def addctf(ctx, event_id: str):
 
             # Update loading message to success message
             await loading_msg.edit(content=None, embed=embed)
+
+            # Send to notification channel if set
+            channel_id = db.get_notification_channel(str(ctx.guild.id))
+            if channel_id:
+                try:
+                    channel = ctx.guild.get_channel(int(channel_id))
+                    if channel:
+                        # Create notification embed
+                        notify_embed = discord.Embed(
+                            title="🎯 New CTF Competition Added",
+                            description=f"**Competition Name:**\n{event['title']}\n\n**ID:** `{event_id}`",
+                            color=discord.Color.blue(),
+                        )
+                        notify_embed.add_field(
+                            name="⏰ Time Information", value=time_info, inline=False
+                        )
+                        notify_embed.add_field(
+                            name="📋 Competition Details", value=details, inline=False
+                        )
+                        notify_embed.add_field(
+                            name="🔗 Links", value=links, inline=False
+                        )
+                        notify_embed.add_field(
+                            name="Added by",
+                            value=ctx.author.mention,
+                            inline=False,
+                        )
+                        notify_embed.set_footer(
+                            text="Use !joinctf <id> to join this competition"
+                        )
+                        await channel.send(embed=notify_embed)
+                except Exception as e:
+                    print(f"Error sending to notification channel: {e}")
+
         else:
             await loading_msg.edit(content="❌ Failed to add competition")
 

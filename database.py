@@ -77,6 +77,14 @@ class Database:
             )
         """)
 
+        # Create guild_settings table
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS guild_settings (
+                guild_id TEXT PRIMARY KEY,
+                notification_channel_id TEXT
+            )
+        """)
+
         conn.commit()
         conn.close()
 
@@ -421,5 +429,44 @@ class Database:
         except Exception as e:
             print(f"Error checking user join status: {e}")
             return False
+        finally:
+            conn.close()
+
+    def set_notification_channel(self, guild_id: str, channel_id: str) -> bool:
+        """Set notification channel for a guild"""
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+
+        try:
+            c.execute(
+                """
+                INSERT OR REPLACE INTO guild_settings (guild_id, notification_channel_id)
+                VALUES (?, ?)
+                """,
+                (guild_id, channel_id),
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error setting notification channel: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_notification_channel(self, guild_id: str) -> str:
+        """Get notification channel ID for a guild"""
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+
+        try:
+            c.execute(
+                "SELECT notification_channel_id FROM guild_settings WHERE guild_id = ?",
+                (guild_id,),
+            )
+            result = c.fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            print(f"Error getting notification channel: {e}")
+            return None
         finally:
             conn.close()
