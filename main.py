@@ -948,6 +948,9 @@ async def addctf(ctx, event_id: str):
             )
             embed.add_field(name="🔗 Links", value=links, inline=False)
 
+            # Add hidden event ID for message identification
+            embed.set_footer(text=f"event_id:{event_id}")
+
             # Create view with buttons
             view = CTFButtons(event_id=event_id, event_name=event["title"])
 
@@ -1006,109 +1009,6 @@ async def addctf(ctx, event_id: str):
 
 
 @bot.command()
-async def listctf(ctx):
-    """List all added CTF competitions"""
-    events = db.get_all_events(str(ctx.guild.id))
-
-    if not events:
-        await ctx.send("📝 No CTF competitions added yet")
-        return
-
-    # Sort by start time
-    events.sort(key=lambda x: x["start_time"])
-
-    # Create main embed
-    main_embed = discord.Embed(
-        title="📋 CTF Competition List",
-        description=f"Total: {len(events)} competitions",
-        color=discord.Color.blue(),
-    )
-
-    # Add competition info
-    for i, event in enumerate(events, 1):
-        start_time = datetime.fromisoformat(event["start_time"])
-        end_time = datetime.fromisoformat(event["end_time"])
-
-        # Convert to user's timezone
-        user_start_time = convert_to_user_timezone(
-            start_time, str(ctx.author.id), str(ctx.guild.id)
-        )
-        user_end_time = convert_to_user_timezone(
-            end_time, str(ctx.author.id), str(ctx.guild.id)
-        )
-
-        # Calculate remaining time (ensure timezone consistency)
-        now = datetime.now(user_start_time.tzinfo)
-        time_left = user_start_time - now
-
-        # Set status and color
-        if now > user_end_time:
-            status = "Ended"
-            color = "🔴"
-        elif now > user_start_time:
-            status = "In Progress"
-            color = "🟢"
-        else:
-            days = time_left.days
-            if days > 7:
-                status = f"{days} days left"
-                color = "⚪"
-            elif days > 0:
-                status = f"{days} days left"
-                color = "🟡"
-            else:
-                hours = time_left.seconds // 3600
-                status = f"{hours} hours left"
-                color = "🟠"
-
-        # Get adder info
-        adder = None
-        if event.get("added_by"):
-            try:
-                adder = await ctx.guild.fetch_member(event["added_by"])
-            except discord.NotFound:
-                # Member not found (left the server)
-                adder = None
-            except discord.HTTPException:
-                # Failed to fetch member
-                adder = None
-            except Exception as e:
-                print(f"Error fetching member: {e}")
-                adder = None
-
-        # Create competition info field
-        value = (
-            f"**ID:** `{event['event_id']}`\n\n"
-            f"**Start Time:**\n{user_start_time.strftime('%Y-%m-%d %H:%M')} ({user_start_time.tzinfo})\n\n"
-            f"**End Time:**\n{user_end_time.strftime('%Y-%m-%d %H:%M')} ({user_end_time.tzinfo})\n\n"
-            f"**Type:** {event['event_type']}\n"
-            f"**Weight:** {event['weight']}\n"
-            f"**Location:** {event['location']}\n"
-            f"**Status:** {color} {status}\n"
-            f"**Added by:** {adder.mention if adder else 'Unknown'}"
-        )
-
-        # Add links
-        if event["official_url"]:
-            value += f"\n\n**Official Link:**\n{event['official_url']}"
-        if event["ctftime_url"]:
-            value += f"\n\n**CTFtime:**\n{event['ctftime_url']}"
-
-        # Add separator
-        if i < len(events):
-            value += "\n\n" + "─" * 30
-
-        main_embed.add_field(name=f"🏆 {event['name']}", value=value, inline=False)
-
-    # Add footer
-    main_embed.set_footer(
-        text="Use !addctf <id> to add competition | Use !delctf <id> to delete competition"
-    )
-
-    await ctx.send(embed=main_embed)
-
-
-@bot.command()
 async def delctf(ctx, event_id: str):
     """Delete specified CTF competition
     Usage:
@@ -1133,6 +1033,23 @@ async def delctf(ctx, event_id: str):
             await ctx.send("❌ No permission to delete roles")
         except Exception as e:
             await ctx.send(f"❌ Error deleting role: {str(e)}")
+
+    # Delete notification message if exists
+    channel_id = db.get_notification_channel(str(ctx.guild.id))
+    if channel_id:
+        try:
+            channel = ctx.guild.get_channel(int(channel_id))
+            if channel:
+                # Search for the notification message with matching event ID
+                async for message in channel.history(limit=None):
+                    if (
+                        message.embeds
+                        and message.embeds[0].footer.text == f"event_id:{event_id}"
+                    ):
+                        await message.delete()
+                        break
+        except Exception as e:
+            print(f"Error deleting notification message: {e}")
 
     if db.delete_event(event_id, str(ctx.guild.id)):
         embed = discord.Embed(
