@@ -8,8 +8,8 @@ import requests
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
+from ctftime_api import get_event, get_team_events
 from database import Database
-from test_ctftime import fetch_team_planned_events
 
 # 加载环境变量
 load_dotenv()
@@ -255,7 +255,7 @@ async def check_ctf_events():
                                         guild,
                                         user_id,
                                         event,
-                                        "24小時",
+                                        "24 hours before",
                                         user_start_time,
                                         user_end_time,
                                     )
@@ -270,7 +270,7 @@ async def check_ctf_events():
                                         guild,
                                         user_id,
                                         event,
-                                        "12小時",
+                                        "12 hours before",
                                         user_start_time,
                                         user_end_time,
                                     )
@@ -285,7 +285,7 @@ async def check_ctf_events():
                                         guild,
                                         user_id,
                                         event,
-                                        "1小時",
+                                        "1 hour before",
                                         user_start_time,
                                         user_end_time,
                                     )
@@ -306,7 +306,7 @@ async def check_ctf_events():
                                         guild,
                                         user_id,
                                         event,
-                                        "1小時",
+                                        "1 hour before",
                                         user_start_time,
                                         user_end_time,
                                         is_end=True,
@@ -322,7 +322,7 @@ async def check_ctf_events():
                                         guild,
                                         user_id,
                                         event,
-                                        "30分鐘",
+                                        "30 minutes before",
                                         user_start_time,
                                         user_end_time,
                                         is_end=True,
@@ -338,7 +338,7 @@ async def check_ctf_events():
                                         guild,
                                         user_id,
                                         event,
-                                        "10分鐘",
+                                        "10 minutes before",
                                         user_start_time,
                                         user_end_time,
                                         is_end=True,
@@ -351,40 +351,42 @@ async def check_ctf_events():
 async def send_reminder(
     guild, user_id, event, time_str, start_time, end_time, is_end=False
 ):
-    """發送提醒訊息"""
+    """Send reminder message"""
     try:
         member = await guild.fetch_member(int(user_id))
         if not member:
             return
 
         embed = discord.Embed(
-            title="🏁 比賽即將結束" if is_end else "🎯 比賽即將開始",
-            description=f"比賽：{event['name']}\n\n距離比賽{'結束' if is_end else '開始'}還有 {time_str}",
+            title="🏁 Competition Ending Soon"
+            if is_end
+            else "🎯 Competition Starting Soon",
+            description=f"Competition: {event['name']}\n\n{time_str} until competition {'ends' if is_end else 'starts'}",
             color=discord.Color.red() if is_end else discord.Color.green(),
         )
 
         time_info = (
-            f"**開始時間：**\n{start_time.strftime('%Y-%m-%d %H:%M')} ({start_time.tzinfo})\n\n"
-            f"**結束時間：**\n{end_time.strftime('%Y-%m-%d %H:%M')} ({end_time.tzinfo})"
+            f"**Start Time:**\n{start_time.strftime('%Y-%m-%d %H:%M')} ({start_time.tzinfo})\n\n"
+            f"**End Time:**\n{end_time.strftime('%Y-%m-%d %H:%M')} ({end_time.tzinfo})"
         )
-        embed.add_field(name="⏰ 時間資訊", value=time_info, inline=False)
+        embed.add_field(name="⏰ Time Information", value=time_info, inline=False)
 
         if event["official_url"]:
             embed.add_field(
-                name="🔗 比賽連結", value=event["official_url"], inline=False
+                name="🔗 Competition Link", value=event["official_url"], inline=False
             )
 
         try:
             await member.send(embed=embed)
         except discord.Forbidden:
-            # 如果無法發送DM，嘗試在通知頻道提醒
+            # If cannot send DM, try to remind in notification channel
             channel_id = db.get_notification_channel(str(guild.id))
             if channel_id:
                 channel = guild.get_channel(int(channel_id))
                 if channel:
                     await channel.send(f"{member.mention}", embed=embed)
     except Exception as e:
-        print(f"Error sending reminder: {str(e)}")
+        print(f"Error sending reminder: {e}")
 
 
 @bot.command()
@@ -411,9 +413,7 @@ async def setctftime(ctx, team_id: str = None):
             )
             await ctx.send(embed=embed)
         else:
-            await ctx.send(
-                "❌ No CTFtime team ID set, please use `!setctftime <team_id>` to set one"
-            )
+            await ctx.send("❌ No CTFtime team ID set")
         return
 
     # Set new team ID
@@ -424,9 +424,7 @@ async def setctftime(ctx, team_id: str = None):
             color=discord.Color.green(),
         )
         embed.add_field(
-            name="Team URL",
-            value=f"https://ctftime.org/team/{team_id}",
-            inline=False,
+            name="Team URL", value=f"https://ctftime.org/team/{team_id}", inline=False
         )
         await ctx.send(embed=embed)
 
@@ -450,7 +448,7 @@ async def setctftime(ctx, team_id: str = None):
 
         try:
             # Get team's planned events
-            planned_events = fetch_team_planned_events(team_id)
+            planned_events = get_team_events(team_id)
             if not planned_events:
                 await loading_msg.edit(
                     content="❌ No planned events found or failed to fetch events."
@@ -469,7 +467,7 @@ async def setctftime(ctx, team_id: str = None):
                     continue
 
                 # Get event details
-                event_details = await get_ctf_event(event["id"])
+                event_details = await get_event(event["id"])
                 if not event_details:
                     error_count += 1
                     continue
@@ -533,7 +531,7 @@ async def setctftime(ctx, team_id: str = None):
                     )
                     embed.add_field(name="🔗 Links", value=links, inline=False)
 
-                    embed.set_footer(text="Use !joinctf <id> to join this competition")
+                    embed.set_footer(text=f"event_id:{event['id']}")
                     await channel.send(embed=embed)
                     imported_count += 1
                 else:
@@ -565,7 +563,7 @@ async def check_team_events():
                 continue
 
             # Get team's planned events
-            planned_events = fetch_team_planned_events(team_id)
+            planned_events = get_team_events(team_id)
             if not planned_events:
                 continue
 
@@ -585,7 +583,7 @@ async def check_team_events():
                     continue
 
                 # Get event details
-                event_details = await get_ctf_event(event["id"])
+                event_details = await get_event(event["id"])
                 if not event_details:
                     continue
 
@@ -601,7 +599,7 @@ async def check_team_events():
                     event_details["location"],
                     event_details["url"],
                     event_details["ctftime_url"],
-                    str(bot.user.id),  # Bot's ID as adder
+                    None,  # No adder for automatic imports
                 ):
                     # Create role
                     try:
@@ -648,7 +646,7 @@ async def check_team_events():
                     )
                     embed.add_field(name="🔗 Links", value=links, inline=False)
 
-                    embed.set_footer(text="Use !joinctf <id> to join this competition")
+                    embed.set_footer(text=f"event_id:{event['id']}")
                     await channel.send(embed=embed)
 
     except Exception as e:
@@ -897,7 +895,7 @@ async def addctf(ctx, event_id: str):
 
     try:
         # Get competition info
-        event = await get_ctf_event(event_id)
+        event = await get_event(event_id)
         if not event:
             await loading_msg.edit(
                 content="❌ Unable to get competition info, please check the event ID"
@@ -1652,20 +1650,20 @@ async def participants(ctx, event_id: str):
 
 class ReminderSelect(discord.ui.View):
     def __init__(self, event_id: str, event_name: str):
-        super().__init__(timeout=300)  # 5分钟超时
+        super().__init__(timeout=300)  # 5 minutes timeout
         self.event_id = event_id
         self.event_name = event_name
         self.selected_start = []
         self.selected_end = []
 
     @discord.ui.select(
-        placeholder="選擇比賽開始前的提醒時間",
+        placeholder="Select reminder times before competition starts",
         min_values=0,
         max_values=3,
         options=[
-            discord.SelectOption(label="24小時前", value="24h_before"),
-            discord.SelectOption(label="12小時前", value="12h_before"),
-            discord.SelectOption(label="1小時前", value="1h_before"),
+            discord.SelectOption(label="24 hours before", value="24h_before"),
+            discord.SelectOption(label="12 hours before", value="12h_before"),
+            discord.SelectOption(label="1 hour before", value="1h_before"),
         ],
     )
     async def start_select(
@@ -1675,13 +1673,13 @@ class ReminderSelect(discord.ui.View):
         await interaction.response.defer()
 
     @discord.ui.select(
-        placeholder="選擇比賽結束前的提醒時間",
+        placeholder="Select reminder times before competition ends",
         min_values=0,
         max_values=3,
         options=[
-            discord.SelectOption(label="1小時前", value="1h_before_end"),
-            discord.SelectOption(label="30分鐘前", value="30m_before_end"),
-            discord.SelectOption(label="10分鐘前", value="10m_before_end"),
+            discord.SelectOption(label="1 hour before", value="1h_before_end"),
+            discord.SelectOption(label="30 minutes before", value="30m_before_end"),
+            discord.SelectOption(label="10 minutes before", value="10m_before_end"),
         ],
     )
     async def end_select(
@@ -1690,16 +1688,16 @@ class ReminderSelect(discord.ui.View):
         self.selected_end = select.values
         await interaction.response.defer()
 
-    @discord.ui.button(label="確認設定", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="Confirm Settings", style=discord.ButtonStyle.green)
     async def confirm(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # 如果都沒選，使用預設值
+        # Use default values if none selected
         if not self.selected_start and not self.selected_end:
             self.selected_start = ["24h_before", "1h_before"]
             self.selected_end = ["1h_before_end", "10m_before_end"]
 
-        # 儲存設定
+        # Save settings
         if db.set_reminder_settings(
             self.event_id,
             str(interaction.guild_id),
@@ -1708,8 +1706,8 @@ class ReminderSelect(discord.ui.View):
             ",".join(self.selected_end) if self.selected_end else "",
         ):
             embed = discord.Embed(
-                title="✅ 提醒設定已更新",
-                description=f"比賽：{self.event_name}",
+                title="✅ Reminder Settings Updated",
+                description=f"Competition: {self.event_name}",
                 color=discord.Color.green(),
             )
 
@@ -1717,70 +1715,72 @@ class ReminderSelect(discord.ui.View):
                 start_times = []
                 for time in self.selected_start:
                     if time == "24h_before":
-                        start_times.append("24小時前")
+                        start_times.append("24 hours before")
                     elif time == "12h_before":
-                        start_times.append("12小時前")
+                        start_times.append("12 hours before")
                     elif time == "1h_before":
-                        start_times.append("1小時前")
+                        start_times.append("1 hour before")
                 embed.add_field(
-                    name="比賽開始前提醒", value="\n".join(start_times), inline=False
+                    name="Start Time Reminders",
+                    value="\n".join(start_times),
+                    inline=False,
                 )
 
             if self.selected_end:
                 end_times = []
                 for time in self.selected_end:
                     if time == "1h_before_end":
-                        end_times.append("1小時前")
+                        end_times.append("1 hour before")
                     elif time == "30m_before_end":
-                        end_times.append("30分鐘前")
+                        end_times.append("30 minutes before")
                     elif time == "10m_before_end":
-                        end_times.append("10分鐘前")
+                        end_times.append("10 minutes before")
                 embed.add_field(
-                    name="比賽結束前提醒", value="\n".join(end_times), inline=False
+                    name="End Time Reminders", value="\n".join(end_times), inline=False
                 )
 
-            # 發送確認訊息
+            # Send confirmation message
             await interaction.response.send_message(embed=embed, ephemeral=False)
 
-            # 刪除原始訊息
+            # Delete original message
             try:
                 await interaction.message.delete()
             except discord.NotFound:
-                pass  # 訊息已被刪除
+                pass  # Message already deleted
             except discord.Forbidden:
-                print("無權限刪除訊息")
+                print("No permission to delete message")
             except Exception as e:
-                print(f"刪除訊息時發生錯誤: {e}")
+                print(f"Error deleting message: {e}")
         else:
             await interaction.response.send_message(
-                "❌ 設定提醒時間失敗", ephemeral=True
+                "❌ Failed to set reminder times", ephemeral=True
             )
 
 
 @bot.command()
 async def setremind(ctx, event_id: str = None):
-    """設定比賽提醒時間
-    用法:
-    !setremind <比賽ID> - 設定指定比賽的提醒時間
+    """Set reminder times for a competition
+    Usage:
+    !setremind <event_id> - Set reminder times for the specified competition
     """
     if not event_id:
-        await ctx.send("❌ 請提供比賽ID")
+        await ctx.send("❌ Please provide an event ID")
         return
 
     event = db.get_event(event_id, str(ctx.guild.id))
     if not event:
-        await ctx.send("❌ 找不到該比賽")
+        await ctx.send("❌ Competition not found")
         return
 
-    # 檢查是否已加入比賽
+    # Check if user has joined the competition
     if not db.is_user_joined(event_id, str(ctx.guild.id), str(ctx.author.id)):
-        await ctx.send("❌ 你尚未加入該比賽")
+        await ctx.send("❌ You haven't joined this competition")
         return
 
     view = ReminderSelect(event_id=event_id, event_name=event["name"])
     embed = discord.Embed(
-        title="⏰ 設定比賽提醒時間",
-        description=f"比賽：{event['name']}\n\n請選擇你想要在比賽開始和結束前多久收到提醒\n不選擇則使用預設值：\n比賽開始前24小時和1小時\n比賽結束前1小時和10分鐘",
+        title="⏰ Set Competition Reminders",
+        description=f"Competition: {event['name']}\n\nSelect when you want to receive reminders before the competition starts and ends.\nDefault values if none selected:\nStart: 24 hours and 1 hour before\nEnd: 1 hour and 10 minutes before",
         color=discord.Color.blue(),
     )
     await ctx.send(embed=embed, view=view)
