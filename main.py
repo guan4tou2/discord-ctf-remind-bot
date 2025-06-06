@@ -851,7 +851,7 @@ async def joinctf(ctx, event_id: str):
             if role:
                 try:
                     await ctx.author.add_roles(role)
-                    await ctx.send(f"✅ Role added: {role.mention}")
+                    await ctx.send(f"✅ Role added: {role.name}")
                 except discord.Forbidden:
                     await ctx.send("❌ No permission to add roles")
                 except Exception as e:
@@ -1086,6 +1086,89 @@ async def on_command_error(ctx, error):
         await ctx.send(f"❌ An error occurred: {str(error.original)}")
         return
     await ctx.send(f"❌ An error occurred: {str(error)}")
+
+
+@bot.command()
+async def participants(ctx, event_id: str):
+    """View competition participants
+    Usage:
+    !participants <ctftime_event_id> - Show list of participants for the specified competition
+    """
+    try:
+        # Check if competition exists
+        event = db.get_event(event_id, str(ctx.guild.id))
+        if not event:
+            await ctx.send(
+                "❌ Competition not found, please use !addctf to add it first"
+            )
+            return
+
+        # Get participants list
+        participants = db.get_event_participants(event_id, str(ctx.guild.id))
+
+        if not participants:
+            await ctx.send(f"📝 No one has joined {event['name']} yet")
+            return
+
+        # Create embed
+        embed = discord.Embed(
+            title=f"👥 {event['name']} Participants",
+            description=f"Total: {len(participants)} participants",
+            color=discord.Color.blue(),
+        )
+
+        # Add participants info
+        participants_list = []
+        for i, participant in enumerate(participants, 1):
+            try:
+                member = await ctx.guild.fetch_member(participant["user_id"])
+                join_time = datetime.fromisoformat(participant["join_time"])
+                # Convert to user timezone
+                user_join_time = convert_to_user_timezone(
+                    join_time, participant["user_id"], str(ctx.guild.id)
+                )
+                participants_list.append(
+                    f"{i}. {member.mention} (Joined: {user_join_time.strftime('%Y-%m-%d %H:%M')})"
+                )
+            except discord.NotFound:
+                participants_list.append(
+                    f"{i}. Unknown User (ID: {participant['user_id']})"
+                )
+            except Exception as e:
+                print(f"Error fetching member: {e}")
+                participants_list.append(
+                    f"{i}. Unknown User (ID: {participant['user_id']})"
+                )
+
+        # Split participants list into fields (20 participants per field)
+        chunk_size = 20
+        for i in range(0, len(participants_list), chunk_size):
+            chunk = participants_list[i : i + chunk_size]
+            field_name = f"Participants List ({i + 1}-{min(i + chunk_size, len(participants_list))})"
+            embed.add_field(name=field_name, value="\n".join(chunk), inline=False)
+
+        # Add competition info
+        start_time = datetime.fromisoformat(event["start_time"])
+        end_time = datetime.fromisoformat(event["end_time"])
+
+        # Convert to user timezone
+        user_start_time = convert_to_user_timezone(
+            start_time, str(ctx.author.id), str(ctx.guild.id)
+        )
+        user_end_time = convert_to_user_timezone(
+            end_time, str(ctx.author.id), str(ctx.guild.id)
+        )
+
+        time_info = (
+            f"**Start Time:**\n{user_start_time.strftime('%Y-%m-%d %H:%M')} ({user_start_time.tzinfo})\n\n"
+            f"**End Time:**\n{user_end_time.strftime('%Y-%m-%d %H:%M')} ({user_end_time.tzinfo})"
+        )
+        embed.add_field(name="⏰ Competition Time", value=time_info, inline=False)
+
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        await ctx.send(f"❌ Error occurred: {str(e)}")
 
 
 # Run the bot
