@@ -951,24 +951,45 @@ async def addctf(ctx, event_id: str):
             # Create view with buttons
             view = CTFButtons(event_id=event_id, event_name=event["title"])
 
-            # Update loading message with embed and buttons
-            await loading_msg.edit(content=None, embed=embed, view=view)
-
-            # Send to notification channel if set
+            # Get notification channel
             channel_id = db.get_notification_channel(str(ctx.guild.id))
-            if channel_id and channel_id != str(ctx.channel.id):
+
+            if channel_id:
                 try:
                     channel = ctx.guild.get_channel(int(channel_id))
                     if channel:
+                        # Send detailed embed to notification channel
                         await channel.send(
                             embed=embed,
                             view=CTFButtons(
                                 event_id=event_id, event_name=event["title"]
                             ),
                         )
-                except Exception as e:
-                    print(f"Error sending to notification channel: {e}")
 
+                        # If command was used in notification channel, don't send another message
+                        if str(ctx.channel.id) == channel_id:
+                            await loading_msg.delete()
+                        else:
+                            # Send simple success message in original channel
+                            await loading_msg.edit(
+                                content=f"✅ Successfully added {event['title']}! Check {channel.mention} for details."
+                            )
+                    else:
+                        # If notification channel not found, send detailed embed in current channel
+                        await loading_msg.edit(content=None, embed=embed, view=view)
+                        await ctx.send(
+                            "⚠️ Notification channel not found. Please set a new one using `!setnotify #channel`."
+                        )
+                except Exception as e:
+                    # If error sending to notification channel, send detailed embed in current channel
+                    await loading_msg.edit(content=None, embed=embed, view=view)
+                    print(f"Error sending to notification channel: {e}")
+            else:
+                # If no notification channel set, send detailed embed in current channel
+                await loading_msg.edit(content=None, embed=embed, view=view)
+                await ctx.send(
+                    "⚠️ No notification channel set. Please use `!setnotify #channel` to set one."
+                )
         else:
             await loading_msg.edit(content="❌ Failed to add competition")
 
