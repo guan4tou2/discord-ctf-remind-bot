@@ -183,14 +183,14 @@ def get_team_events(team_id: str) -> List[Dict]:
             if not event_link:
                 continue
 
-            event_name = event_link.text.strip()
+            event_title = event_link.text.strip()
             event_url = event_link["href"]
             event_id = event_url.split("/")[-1]
             event_date = cols[1].text.strip()
 
             events.append(
                 {
-                    "name": event_name,
+                    "title": event_title,
                     "date": event_date,
                     "url": f"{BASE_URL}{event_url}",
                     "id": event_id,

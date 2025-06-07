@@ -7,6 +7,129 @@ from discord.ext import commands
 import pytz
 from datetime import datetime
 from database import Database
+from ctftime_api import get_event, get_team_events
+
+class CTFButtons(discord.ui.View):
+    def __init__(self, event_id: str, event_name: str):
+        super().__init__(timeout=None)  # Buttons will not timeout
+        self.event_id = event_id
+        self.event_name = event_name
+        self.db = Database()  # Initialize database connection
+
+    @discord.ui.button(label="Join CTF", style=discord.ButtonStyle.green, emoji="✅")
+    async def join_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        try:
+            # Check if user already joined
+            if self.db.is_user_joined(
+                self.event_id, str(interaction.guild_id), str(interaction.user.id)
+            ):
+                await interaction.response.send_message(
+                    f"❌ You have already joined {self.event_name}!", ephemeral=True
+                )
+                return
+
+            # Join competition
+            if self.db.join_event(
+                self.event_id, str(interaction.guild_id), str(interaction.user.id)
+            ):
+                # Find corresponding role
+                role_name = f"CTF-{self.event_name}"
+                role = discord.utils.get(interaction.guild.roles, name=role_name)
+
+                if role:
+                    try:
+                        await interaction.user.add_roles(role)
+                        success_msg = f"✅ Role added: {role.mention}"
+                    except discord.Forbidden:
+                        success_msg = "⚠️ Could not add role (missing permissions)"
+                    except Exception as e:
+                        success_msg = f"⚠️ Error adding role: {str(e)}"
+                else:
+                    success_msg = "⚠️ Role not found"
+
+                # Get event details for DM
+                event = self.db.get_event(self.event_id, str(interaction.guild_id))
+                if event and event.get("invite_link"):
+                    try:
+                        # Send invite link via DM
+                        embed = discord.Embed(
+                            title="🔗 CTF Competition Invite Link",
+                            description=f"Competition: {self.event_name}",
+                            color=discord.Color.blue(),
+                        )
+                        embed.add_field(
+                            name="Invite Link", value=event["invite_link"], inline=False
+                        )
+                        embed.add_field(
+                            name="Note",
+                            value="Please keep this link private and do not share it with non-participants.",
+                            inline=False,
+                        )
+                        await interaction.user.send(embed=embed)
+                        success_msg += "\n✉️ Invite link has been sent via DM"
+                    except discord.Forbidden:
+                        success_msg += "\n⚠️ Could not send invite link (DMs are closed)"
+
+                await interaction.response.send_message(
+                    f"✅ Successfully joined {self.event_name}\n{success_msg}",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ Error joining competition", ephemeral=True
+                )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Error occurred: {str(e)}", ephemeral=True
+            )
+
+    @discord.ui.button(label="Leave CTF", style=discord.ButtonStyle.red, emoji="🚪")
+    async def leave_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        try:
+            # Check if user has joined
+            if not self.db.is_user_joined(
+                self.event_id, str(interaction.guild_id), str(interaction.user.id)
+            ):
+                await interaction.response.send_message(
+                    f"❌ You haven't joined {self.event_name}!", ephemeral=True
+                )
+                return
+
+            # Leave competition
+            if self.db.leave_event(
+                self.event_id, str(interaction.guild_id), str(interaction.user.id)
+            ):
+                # Remove role
+                role_name = f"CTF-{self.event_name}"
+                role = discord.utils.get(interaction.guild.roles, name=role_name)
+
+                if role and role in interaction.user.roles:
+                    try:
+                        await interaction.user.remove_roles(role)
+                        success_msg = f"✅ Role removed: {role.mention}"
+                    except discord.Forbidden:
+                        success_msg = "⚠️ Could not remove role (missing permissions)"
+                    except Exception as e:
+                        success_msg = f"⚠️ Error removing role: {str(e)}"
+                else:
+                    success_msg = ""
+
+                await interaction.response.send_message(
+                    f"✅ Successfully left {self.event_name}\n{success_msg}",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ Error leaving competition", ephemeral=True
+                )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Error occurred: {str(e)}", ephemeral=True
+            )
 
 
 class Settings(commands.Cog):
@@ -193,7 +316,13 @@ class Settings(commands.Cog):
                         embed.add_field(name="🔗 Links", value=links, inline=False)
 
                         embed.set_footer(text=f"event_id:{event['id']}")
-                        await channel.send(embed=embed)
+                        
+                        # Create view with buttons
+                        view = CTFButtons(
+                            event_id=event["id"], event_name=event["title"]
+                        )
+
+                        await channel.send(embed=embed, view=view)
                         imported_count += 1
                     else:
                         error_count += 1
