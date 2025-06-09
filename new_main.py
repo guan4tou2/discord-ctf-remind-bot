@@ -3,9 +3,10 @@ Discord bot for CTF competition management and reminders.
 """
 
 import os
+
 import discord
 from discord.ext import commands
-from dotenv import load_dotenv, find_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 from database import Database
 
@@ -30,6 +31,7 @@ async def on_ready():
 
     # Load cogs
     await load_cogs()
+
 
 async def load_cogs():
     """Load all cogs"""
@@ -62,7 +64,32 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.errors.MissingPermissions):
         await ctx.send("❌ You don't have permission to use this command")
     elif isinstance(error, commands.errors.MissingRequiredArgument):
-        await ctx.send("❌ Missing required argument. Please check command usage")
+        # Get command usage info
+        command = ctx.command
+        params = []
+
+        # Build parameter list
+        for param in command.clean_params.values():
+            if param.default == param.empty:
+                params.append(f"<{param.name}>")  # Required parameters
+            else:
+                params.append(f"[{param.name}]")  # Optional parameters
+
+        # Build complete command usage
+        usage = f"!{command.name} {' '.join(params)}"
+
+        # Get command description
+        description = command.help or "No description available"
+
+        # Create error message
+        error_msg = (
+            f"❌ Missing required parameter: `{error.param.name}`\n"
+            f"**Command Usage:**\n"
+            f"`{usage}`\n"
+            f"**Description:**\n"
+            f"{description}"
+        )
+        await ctx.send(error_msg)
     elif isinstance(error, commands.errors.CommandNotFound):
         await ctx.send("❌ Command not found")
     else:
