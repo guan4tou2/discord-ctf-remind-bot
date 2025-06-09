@@ -30,6 +30,13 @@ async def on_ready():
 
     # Load cogs
     await load_cogs()
+    # Start scheduled check tasks
+    if not check_ctf_events.is_running():
+        check_ctf_events.start()
+    if not check_team_events.is_running():
+        check_team_events.start()
+    if not check_ended_events.is_running():
+        check_ended_events.start()
 
 
 async def load_cogs():

@@ -33,40 +33,53 @@ cd discord-ctf-remind-bot
 
 2. Create and activate virtual environment:
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv venv
 ```
 
 3. Install dependencies using uv:
-   ```bash
-uv pip install -r requirements.txt
-   ```
+```bash
+uv sync
+```
 
 4. Create `.env` file and add your Discord bot token:
-   ```
+```
 DISCORD_TOKEN=your_bot_token_here
-   ```
+```
 
 ## Usage
 
 1. Start the bot:
-   ```bash
-   python main.py
-   ```
+```bash
+uv run new_main.py
+```
 
 2. Bot commands:
-- `!timezone` - View current timezone
-- `!timezone list` - Show available timezones
-- `!timezone <timezone>` - Set timezone (e.g., `!timezone Asia/Taipei`)
-- `!addctf <ctftime_id>` - Add CTF competition
-- `!listctf` - List all competitions
-- `!delctf <ctftime_id>` - Delete competition
-- `!joinctf <ctftime_id>` - Join competition
-- `!leavectf <ctftime_id>` - Leave competition
-- `!myctf` - View your competitions
-- `!base64 encode <text>` - Encode text to base64
-- `!base64 decode <text>` - Decode base64 to text
-- `!ping` - Test bot response time
+```
+CTF:
+  addctf       Add CTF competition to reminder list
+  delctf       Delete specified CTF competition
+  invitectf    Set or view competition invite link
+  joinctf      Join CTF competition
+  leavectf     Leave CTF competition
+  listctf      List all added CTF competitions
+  myctf        View all CTF competitions you're participating in
+  participants View competition participants
+Reminder:
+  setremind    Set reminder times for a competition
+Settings:
+  setctftime   Set or view CTFtime team ID
+  setnotify    Set notification channel for CTF events
+  timezone     Set or view timezone
+Utils:
+  ping         Check bot's latency
+​No Category:
+  help         Shows this message
+
+Type !help command for more info on a command.
+You can also type !help category for more info on a category.
+```
+
+![img](img/image.png)
 
 ## Requirements
 

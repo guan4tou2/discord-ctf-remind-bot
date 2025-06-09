@@ -140,7 +140,7 @@ class Settings(commands.Cog):
         self.db = Database()
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    #@commands.has_permissions(administrator=True)
     async def setnotify(self, ctx, channel: discord.TextChannel = None):
         """Set notification channel for CTF events
         Usage:
@@ -176,7 +176,7 @@ class Settings(commands.Cog):
             await ctx.send("❌ Error setting notification channel")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    #@commands.has_permissions(administrator=True)
     async def setctftime(self, ctx, team_id: str = None):
         """Set or view CTFtime team ID
         Usage:

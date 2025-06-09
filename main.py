@@ -653,6 +653,45 @@ async def check_team_events():
         print(f"Error checking team events: {str(e)}")
 
 
+@tasks.loop(hours=1)  # Check every hour
+async def check_ended_events():
+    """Check for ended events and clean up roles"""
+    try:
+        # Get all guilds
+        for guild in bot.guilds:
+            # Get all events for this guild
+            events = db.get_all_events(str(guild.id))
+
+            for event in events:
+                # Check if event has ended
+                end_time = datetime.fromisoformat(event["end_time"])
+                if datetime.now(end_time.tzinfo) > end_time:
+                    # Find and delete corresponding role
+                    role_name = f"CTF-{event['name']}"
+                    role = discord.utils.get(guild.roles, name=role_name)
+
+                    if role:
+                        try:
+                            await role.delete(
+                                reason=f"Automatically deleting role for ended CTF competition {event['name']}"
+                            )
+                            print(
+                                f"✅ Automatically deleted role {role_name} for ended competition in guild {guild.id}"
+                            )
+                        except discord.Forbidden:
+                            print(
+                                f"❌ No permission to delete role in guild {guild.id}"
+                            )
+                        except Exception as e:
+                            print(f"❌ Error deleting role: {e}")
+
+                    # Delete the event from database
+                    db.delete_event(event["event_id"], str(guild.id))
+
+    except Exception as e:
+        print(f"Error in check_ended_events: {e}")
+
+
 @bot.event
 async def on_ready():
     print(f"{bot.user} has successfully started!")
@@ -661,6 +700,8 @@ async def on_ready():
         check_ctf_events.start()
     if not check_team_events.is_running():
         check_team_events.start()
+    if not check_ended_events.is_running():
+        check_ended_events.start()
 
 
 @bot.command()

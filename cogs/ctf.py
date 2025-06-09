@@ -142,9 +142,11 @@ class CTF(commands.Cog):
         self.bot = bot
         self.db = Database()
         self.check_team_events.start()
+        self.check_ended_events.start()
 
     def cog_unload(self):
         self.check_team_events.cancel()
+        self.check_ended_events.cancel()
 
     @commands.command()
     async def addctf(self, ctx, event_id: str):
@@ -589,12 +591,14 @@ class CTF(commands.Cog):
             await ctx.send(f"❌ Error occurred: {str(e)}")
 
     @commands.command()
-    #@commands.has_permissions(administrator=True)
-    async def invitectf(self,ctx, event_id: str, invite_link: str = None):
+    # @commands.has_permissions(administrator=True)
+    async def invitectf(self, ctx, event_id: str, invite_link: str = None):
         """Set or view competition invite link"""
         event = self.db.get_event(event_id, str(ctx.guild.id))
         if not event:
-            await ctx.send("❌ Competition not found, please add it first using !addctf")
+            await ctx.send(
+                "❌ Competition not found, please add it first using !addctf"
+            )
             return
 
         if invite_link is None:
@@ -622,7 +626,9 @@ class CTF(commands.Cog):
                     )
                     await ctx.send(embed=channel_embed)
                 except discord.Forbidden:
-                    await ctx.send("❌ Cannot send DM, please check your privacy settings")
+                    await ctx.send(
+                        "❌ Cannot send DM, please check your privacy settings"
+                    )
             else:
                 # If no invite link, just show message in channel
                 embed = discord.Embed(
@@ -696,12 +702,16 @@ class CTF(commands.Cog):
                             except discord.Forbidden:
                                 continue  # Skip if cannot send DM to member
                 except discord.Forbidden:
-                    await ctx.send("❌ Cannot send DM, please check your privacy settings")
+                    await ctx.send(
+                        "❌ Cannot send DM, please check your privacy settings"
+                    )
             else:
                 try:
                     await ctx.author.send("❌ Failed to set invite link")
                 except discord.Forbidden:
-                    await ctx.send("❌ Cannot send DM, please check your privacy settings")
+                    await ctx.send(
+                        "❌ Cannot send DM, please check your privacy settings"
+                    )
 
     @commands.command()
     async def myctf(self, ctx):
@@ -778,7 +788,9 @@ class CTF(commands.Cog):
                 if i < len(events):
                     value += "\n\n" + "─" * 30
 
-                main_embed.add_field(name=f"🏆 {event['name']}", value=value, inline=False)
+                main_embed.add_field(
+                    name=f"🏆 {event['name']}", value=value, inline=False
+                )
 
             await ctx.send(embed=main_embed)
 
@@ -968,6 +980,49 @@ class CTF(commands.Cog):
 
     @check_team_events.before_loop
     async def before_check_team_events(self):
+        """Wait until the bot is ready before starting the task"""
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(hours=1)  # Check every hour
+    async def check_ended_events(self):
+        """Check for ended events and clean up roles"""
+        try:
+            # Get all guilds
+            for guild in self.bot.guilds:
+                # Get all events for this guild
+                events = self.db.get_all_events(str(guild.id))
+
+                for event in events:
+                    # Check if event has ended
+                    end_time = datetime.fromisoformat(event["end_time"])
+                    if datetime.now(end_time.tzinfo) > end_time:
+                        # Find and delete corresponding role
+                        role_name = f"CTF-{event['name']}"
+                        role = discord.utils.get(guild.roles, name=role_name)
+
+                        if role:
+                            try:
+                                await role.delete(
+                                    reason=f"Automatically deleting role for ended CTF competition {event['name']}"
+                                )
+                                print(
+                                    f"✅ Automatically deleted role {role_name} for ended competition in guild {guild.id}"
+                                )
+                            except discord.Forbidden:
+                                print(
+                                    f"❌ No permission to delete role in guild {guild.id}"
+                                )
+                            except Exception as e:
+                                print(f"❌ Error deleting role: {e}")
+
+                        # Delete the event from database
+                        self.db.delete_event(event["event_id"], str(guild.id))
+
+        except Exception as e:
+            print(f"Error in check_ended_events: {e}")
+
+    @check_ended_events.before_loop
+    async def before_check_ended_events(self):
         """Wait until the bot is ready before starting the task"""
         await self.bot.wait_until_ready()
 
