@@ -971,9 +971,14 @@ class CTF(commands.Cog):
                             f"**CTFtime Link:**\n[Click to Visit]({event_details['ctftime_url']})"
                         )
                         embed.add_field(name="🔗 Links", value=links, inline=False)
-
                         embed.set_footer(text=f"event_id:{event['id']}")
-                        await channel.send(embed=embed)
+
+                        # Create view with buttons
+                        view = CTFButtons(
+                            event_id=event["id"], event_name=event["title"]
+                        )
+
+                        await channel.send(embed=embed,view=view)
 
         except Exception as e:
             print(f"Error checking team events: {str(e)}")
