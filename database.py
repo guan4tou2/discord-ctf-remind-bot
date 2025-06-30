@@ -113,6 +113,29 @@ class Database:
         conn.commit()
         conn.close()
 
+    def add_guild(self, guild_id: str) -> bool:
+        """Add a new guild to the database with default settings"""
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+
+        try:
+            # Insert guild with default settings (NULL values for optional fields)
+            c.execute(
+                """
+                INSERT OR IGNORE INTO guild_settings 
+                (guild_id, notification_channel_id, ctftime_team_id)
+                VALUES (?, NULL, NULL)
+                """,
+                (guild_id,),
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error adding guild {guild_id}: {e}")
+            return False
+        finally:
+            conn.close()
+
     def add_event(
         self,
         event_id: str,
